@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001";
+const API_BASE_URL = "https://legal-assistant-backend-1.onrender.com";
 
 interface User {
   username: string;
@@ -60,6 +60,7 @@ function App() {
         justifyContent: "center",
         background: "#f5f5f5",
         fontFamily: "sans-serif",
+        direction: "ltr",
       }}
     >
       <div
@@ -69,7 +70,7 @@ function App() {
           borderRadius: "8px",
           boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
           width: "100%",
-          maxWidth: "400px",
+          maxWidth: "480px",
         }}
       >
         <h1 style={{ marginBottom: "16px", textAlign: "center" }}>
@@ -77,7 +78,7 @@ function App() {
         </h1>
 
         <p style={{ fontSize: "12px", marginBottom: "12px", color: "#555" }}>
-          ה־Backend: <strong>{API_BASE_URL}</strong>
+          ה־Backend כרגע: <strong>{API_BASE_URL}</strong>
         </p>
 
         <form onSubmit={handleSubmit}>
@@ -156,8 +157,12 @@ function App() {
               fontSize: "14px",
             }}
           >
-            <div>מחובר בתור: <strong>{user.username}</strong></div>
-            <div>תפקיד: <strong>{user.role}</strong></div>
+            <div>
+              מחובר בתור: <strong>{user.username}</strong>
+            </div>
+            <div>
+              תפקיד: <strong>{user.role}</strong>
+            </div>
             <div style={{ marginTop: "8px", wordBreak: "break-all" }}>
               <div style={{ fontWeight: "bold" }}>Token:</div>
               <div style={{ fontSize: "11px" }}>{token}</div>
