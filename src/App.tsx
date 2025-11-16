@@ -110,6 +110,7 @@ function App() {
   const [documentUploadMessage, setDocumentUploadMessage] = useState<string | null>(null);
   const [documentUploadError, setDocumentUploadError] = useState<string | null>(null);
   const [documentTextLoadingId, setDocumentTextLoadingId] = useState<string | null>(null);
+  const [documentDeletingId, setDocumentDeletingId] = useState<string | null>(null);
   const [selectedDocumentText, setSelectedDocumentText] = useState<CaseDocument | null>(null);
 
   const [initialReportLoading, setInitialReportLoading] = useState(false);
@@ -434,6 +435,43 @@ function App() {
     }
   };
 
+  const handleDeleteDocument = async (docId: string) => {
+    if (!selectedCase || !token) {
+      setDocumentsError("צריך לבחור תיק ולהתחבר.");
+      return;
+    }
+
+    const confirmed = window.confirm("האם למחוק את המסמך לצמיתות?");
+    if (!confirmed) return;
+
+    setDocumentDeletingId(docId);
+    setDocumentsError(null);
+    setDocumentUploadMessage(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/cases/${selectedCase.id}/documents/${docId}`, {
+        method: "DELETE",
+        headers: authHeaders,
+      });
+
+      if (!response.ok && response.status !== 204) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || "שגיאה במחיקת המסמך.");
+      }
+
+      setDocuments((prev) => prev.filter((doc) => doc.id !== docId));
+      if (selectedDocumentText?.id === docId) {
+        setSelectedDocumentText(null);
+      }
+      setDocumentsError(null);
+      setDocumentUploadMessage("המסמך נמחק.");
+    } catch (error: unknown) {
+      setDocumentsError(error instanceof Error ? error.message : "שגיאה במחיקת המסמך.");
+    } finally {
+      setDocumentDeletingId(null);
+    }
+  };
+
   const handleGenerateInitialReport = async () => {
     if (!selectedCase || !token) {
       setDetailError("צריך לבחור תיק ולהתחבר.");
@@ -647,7 +685,15 @@ function App() {
               <tbody>
                 {documents.map((doc) => (
                   <tr key={doc.id}>
-                    <td style={{ padding: "6px", borderBottom: "1px solid #f3f4f6" }}>{doc.originalFilename}</td>
+                    <td
+                      style={{
+                        padding: "6px",
+                        borderBottom: "1px solid #f3f4f6",
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {doc.originalFilename}
+                    </td>
                     <td style={{ padding: "6px", borderBottom: "1px solid #f3f4f6" }}>
                       {formatBytes(doc.sizeBytes)}
                     </td>
@@ -655,21 +701,38 @@ function App() {
                       {new Date(doc.createdAt).toLocaleString("he-IL")}
                     </td>
                     <td style={{ padding: "6px", borderBottom: "1px solid #f3f4f6", textAlign: "left" }}>
-                      <button
-                        type="button"
-                        onClick={() => handleViewDocumentText(doc.id)}
-                        disabled={documentTextLoadingId === doc.id}
-                        style={{
-                          padding: "6px 10px",
-                          borderRadius: "4px",
-                          border: "1px solid #2563eb",
-                          background: "white",
-                          color: "#2563eb",
-                          cursor: documentTextLoadingId === doc.id ? "default" : "pointer",
-                        }}
-                      >
-                        {documentTextLoadingId === doc.id ? "טוען..." : "צפה בטקסט"}
-                      </button>
+                      <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+                        <button
+                          type="button"
+                          onClick={() => handleViewDocumentText(doc.id)}
+                          disabled={documentTextLoadingId === doc.id}
+                          style={{
+                            padding: "6px 10px",
+                            borderRadius: "4px",
+                            border: "1px solid #2563eb",
+                            background: "white",
+                            color: "#2563eb",
+                            cursor: documentTextLoadingId === doc.id ? "default" : "pointer",
+                          }}
+                        >
+                          {documentTextLoadingId === doc.id ? "טוען..." : "צפה בטקסט"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDocument(doc.id)}
+                          disabled={documentDeletingId === doc.id}
+                          style={{
+                            padding: "6px 10px",
+                            borderRadius: "4px",
+                            border: "1px solid #dc2626",
+                            background: "white",
+                            color: "#dc2626",
+                            cursor: documentDeletingId === doc.id ? "default" : "pointer",
+                          }}
+                        >
+                          {documentDeletingId === doc.id ? "מוחק..." : "מחק"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
