@@ -979,15 +979,9 @@ function App() {
           maxWidth: "1200px",
         }}
       >
-        <h1 style={{ marginBottom: "8px", textAlign: "center" }}>
-          Medical Assistant – מערכת ניהול תיקים
-        </h1>
+        <h1 style={{ marginBottom: "8px", textAlign: "center" }}>Medical Assistant</h1>
         <div style={{ textAlign: "center", marginBottom: "16px" }}>
-          <embed
-            src="/logo-lior-perry.pdf#toolbar=0&navpanes=0"
-            type="application/pdf"
-            style={{ width: "140px", height: "140px" }}
-          />
+          <img src="/logo-lior-perry.pdf" alt="Lior Perry Law Office" style={{ maxWidth: "180px" }} />
         </div>
         <p style={{ fontSize: "12px", marginBottom: "16px", color: "#555", textAlign: "center" }}>
           כתובת ה-Backend: <strong>{API_BASE_URL}</strong>
