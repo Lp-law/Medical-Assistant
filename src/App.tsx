@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 
 const PROD_API_BASE_URL = "https://legal-assistant-backend-1.onrender.com";
 const LOCAL_API_BASE_URL = "http://localhost:3001";
@@ -64,12 +64,56 @@ interface LiteratureReviewResult {
   question: string;
   sources: LiteratureSource[];
   overallSummary: string;
+  searchSuggestions?: string[];
 }
 
 const defaultFocusOptions: FocusOptions = {
   negligence: false,
   causation: false,
   lifeExpectancy: false,
+};
+
+const linkifyLine = (line: string, keyPrefix: string): ReactNode => {
+  const regex = /(https?:\/\/[^\s]+)/g;
+  const pieces: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(line)) !== null) {
+    if (match.index > lastIndex) {
+      pieces.push(line.slice(lastIndex, match.index));
+    }
+    const url = match[0];
+    pieces.push(
+      <a key={`${keyPrefix}-url-${match.index}`} href={url} target="_blank" rel="noreferrer">
+        {url}
+      </a>
+    );
+    lastIndex = match.index + url.length;
+  }
+
+  if (lastIndex < line.length) {
+    pieces.push(line.slice(lastIndex));
+  }
+
+  if (pieces.length === 0) {
+    return line;
+  }
+
+  return pieces;
+};
+
+const renderTextWithLinks = (text: string | null) => {
+  if (!text) {
+    return null;
+  }
+  const lines = text.split("\n");
+  return lines.map((line, lineIndex) => (
+    <span key={`line-${lineIndex}`}>
+      {linkifyLine(line, `line-${lineIndex}`)}
+      {lineIndex < lines.length - 1 ? <br /> : null}
+    </span>
+  ));
 };
 
 const formatBytes = (size: number) => {
@@ -819,11 +863,11 @@ function App() {
                   padding: "8px",
                   maxHeight: "220px",
                   overflowY: "auto",
-                  whiteSpace: "pre-wrap",
                   fontSize: "13px",
+                  lineHeight: 1.5,
                 }}
               >
-                {selectedCase.initialReport}
+                {renderTextWithLinks(selectedCase.initialReport)}
               </div>
               <button
                 type="button"
@@ -912,11 +956,11 @@ function App() {
                   padding: "8px",
                   maxHeight: "220px",
                   overflowY: "auto",
-                  whiteSpace: "pre-wrap",
                   fontSize: "13px",
+                  lineHeight: 1.5,
                 }}
               >
-                {selectedCase.comparisonReport}
+                {renderTextWithLinks(selectedCase.comparisonReport)}
               </div>
               <button
                 type="button"
@@ -1010,9 +1054,20 @@ function App() {
                   </li>
                 ))}
               </ul>
-              <div style={{ fontSize: "13px", whiteSpace: "pre-wrap" }}>
-                <strong>סיכום כולל:</strong> {literatureResult.overallSummary}
+              <div style={{ fontSize: "13px", lineHeight: 1.5 }}>
+                <strong>סיכום כולל:</strong>{" "}
+                <span>{renderTextWithLinks(literatureResult.overallSummary)}</span>
               </div>
+              {literatureResult.searchSuggestions && literatureResult.searchSuggestions.length > 0 && (
+                <div style={{ marginTop: "8px", fontSize: "13px" }}>
+                  <strong>מילות/משפטי חיפוש מומלצים:</strong>
+                  <ul style={{ paddingInlineStart: "18px", marginTop: "4px" }}>
+                    {literatureResult.searchSuggestions.map((suggestion, index) => (
+                      <li key={`search-suggestion-${index}`}>{suggestion}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           ) : (
             <p style={{ fontSize: "13px", color: "#555" }}>טרם בוצע חיפוש ספרות עבור תיק זה.</p>
