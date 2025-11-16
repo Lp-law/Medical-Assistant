@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
 const PROD_API_BASE_URL = "https://legal-assistant-backend-1.onrender.com";
 const LOCAL_API_BASE_URL = "http://localhost:3001";
@@ -67,10 +67,64 @@ interface LiteratureReviewResult {
   searchSuggestions?: string[];
 }
 
+type CaseActivityEventType = "case-created" | "document-uploaded" | "ai-event";
+
+interface CaseActivityEvent {
+  id: string;
+  type: CaseActivityEventType;
+  title: string;
+  description: string;
+  timestamp: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface CaseActivityResponse {
+  events: CaseActivityEvent[];
+}
+
+interface AiUsageByAction {
+  action: string;
+  totalCalls: number;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalTokens: number;
+  totalCostUsd: number;
+  avgDurationMs: number;
+}
+
+interface AiUsageRecentEvent {
+  id: string;
+  caseId: string;
+  username: string;
+  action: string;
+  status: "success" | "error";
+  durationMs: number | null;
+  costUsd: number | null;
+  createdAt: string;
+}
+
+interface AiUsageSummaryResponse {
+  rangeDays: number;
+  summary: {
+    totalCalls: number;
+    totalCostUsd: number;
+    avgDurationMs: number;
+    totalTokens: number;
+  };
+  byAction: AiUsageByAction[];
+  recent: AiUsageRecentEvent[];
+}
+
 const defaultFocusOptions: FocusOptions = {
   negligence: false,
   causation: false,
   lifeExpectancy: false,
+};
+
+const highlightDictionary: Record<keyof FocusOptions, string[]> = {
+  negligence: ["רשלנות", "סטנדרט הטיפול", "negligence", "standard of care"],
+  causation: ["קשר סיבתי", "causation", "etiology", "proximate cause"],
+  lifeExpectancy: ["תוחלת חיים", "נכות", "life expectancy", "prognosis", "disability"],
 };
 
 const linkifyLine = (line: string, keyPrefix: string): ReactNode => {
@@ -114,6 +168,31 @@ const renderTextWithLinks = (text: string | null) => {
       {lineIndex < lines.length - 1 ? <br /> : null}
     </span>
   ));
+};
+
+const formatDateTime = (value: string) => {
+  try {
+    return new Date(value).toLocaleString("he-IL");
+  } catch {
+    return value;
+  }
+};
+
+const extractHighlightedParagraphs = (text: string, focus: FocusOptions) => {
+  const keywords = Object.entries(focus)
+    .filter(([, enabled]) => enabled)
+    .flatMap(([key]) => highlightDictionary[key as keyof FocusOptions])
+    .filter(Boolean);
+
+  const paragraphs = text.split(/\n{2,}/).map((paragraph) => paragraph.trim()).filter(Boolean);
+
+  return paragraphs.map((paragraph, index) => {
+    const highlighted =
+      keywords.length > 0
+        ? keywords.some((keyword) => paragraph.toLowerCase().includes(keyword.toLowerCase()))
+        : false;
+    return { id: `para-${index}`, content: paragraph, highlighted };
+  });
 };
 
 const formatBytes = (size: number) => {
@@ -168,8 +247,14 @@ function App() {
   const [literatureLoading, setLiteratureLoading] = useState(false);
   const [literatureError, setLiteratureError] = useState<string | null>(null);
   const [literatureResult, setLiteratureResult] = useState<LiteratureReviewResult | null>(null);
+  const [caseActivity, setCaseActivity] = useState<CaseActivityEvent[]>([]);
+  const [caseActivityLoading, setCaseActivityLoading] = useState(false);
+  const [caseActivityError, setCaseActivityError] = useState<string | null>(null);
 
-  const isCompactLayout = !user || activeTab === "login";
+  const [aiUsageSummary, setAiUsageSummary] = useState<AiUsageSummaryResponse | null>(null);
+  const [aiUsageLoading, setAiUsageLoading] = useState(false);
+  const [aiUsageError, setAiUsageError] = useState<string | null>(null);
+  const [aiUsageRange, setAiUsageRange] = useState(30);
 
   useEffect(() => {
     if (user && token) {
@@ -177,14 +262,50 @@ function App() {
     }
   }, [user, token]);
 
+  const handleLogout = () => {
+    setUser(null);
+    setToken(null);
+    setActiveTab("login");
+    setSelectedCaseId(null);
+    setCases([]);
+    setDocuments([]);
+  };
+
   const selectedCase = useMemo(
     () => (selectedCaseId ? cases.find((c) => c.id === selectedCaseId) ?? null : null),
     [cases, selectedCaseId]
   );
 
+  const highlightedDocumentParagraphs = useMemo(() => {
+    if (!selectedDocumentText?.extractedText) {
+      return [];
+    }
+    const focusOptions = selectedCase?.focusOptions ?? defaultFocusOptions;
+    return extractHighlightedParagraphs(selectedDocumentText.extractedText, focusOptions).map((paragraph, index) => ({
+      id: `${selectedDocumentText.id}-p-${index}`,
+      text: paragraph.content,
+      highlight: paragraph.highlighted,
+    }));
+  }, [selectedCase?.focusOptions, selectedDocumentText]);
+
   const authHeaders = useMemo<Record<string, string>>(
     () => (token ? { Authorization: `Bearer ${token}` } : ({} as Record<string, string>)),
     [token]
+  );
+
+  const copyToClipboard = useCallback(
+    async (value: string, label: string) => {
+      if (!value) {
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(value);
+        setDetailMessage(`${label} הועתק ללוח.`);
+      } catch {
+        setDetailError("העתקה ללוח נכשלה בדפדפן הנוכחי.");
+      }
+    },
+    []
   );
 
   const handleLoginSubmit = async (event: React.FormEvent) => {
@@ -215,6 +336,18 @@ function App() {
     } finally {
       setLoginLoading(false);
     }
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    setToken(null);
+    setActiveTab("login");
+    setCases([]);
+    setSelectedCaseId(null);
+    setDocuments([]);
+    setCaseActivity([]);
+    setSelectedDocumentText(null);
+    setAiUsageSummary(null);
   };
 
   const loadCases = async () => {
@@ -271,14 +404,78 @@ function App() {
     }
   };
 
+  const fetchCaseActivity = useCallback(
+    async (caseId: string) => {
+      if (!token) return;
+      setCaseActivityLoading(true);
+      setCaseActivityError(null);
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/cases/${caseId}/activity`, {
+          headers: authHeaders,
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.message || "Failed to load case activity");
+        }
+
+        const data: CaseActivityResponse = await response.json();
+        setCaseActivity(data.events);
+      } catch (error: unknown) {
+        setCaseActivityError(error instanceof Error ? error.message : "שגיאה בטעינת ציר הזמן.");
+      } finally {
+        setCaseActivityLoading(false);
+      }
+    },
+    [authHeaders, token]
+  );
+
+  const loadAiUsage = useCallback(async () => {
+    if (!token || user?.role !== "admin") {
+      return;
+    }
+
+    setAiUsageLoading(true);
+    setAiUsageError(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/ai-usage?rangeDays=${aiUsageRange}`, {
+        headers: authHeaders,
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || "Failed to load AI usage summary");
+      }
+
+      const data: AiUsageSummaryResponse = await response.json();
+      setAiUsageSummary(data);
+    } catch (error: unknown) {
+      setAiUsageError(error instanceof Error ? error.message : "שגיאה בטעינת נתוני ה-AI.");
+    } finally {
+      setAiUsageLoading(false);
+    }
+  }, [aiUsageRange, authHeaders, token, user]);
+
   useEffect(() => {
     if (selectedCaseId && token) {
       void fetchDocuments(selectedCaseId);
+      void fetchCaseActivity(selectedCaseId);
     } else {
       setDocuments([]);
       setSelectedDocumentText(null);
+      setCaseActivity([]);
     }
-  }, [selectedCaseId, token]);
+  }, [selectedCaseId, token, fetchCaseActivity]);
+
+  useEffect(() => {
+    if (user?.role === "admin" && token) {
+      void loadAiUsage();
+    } else {
+      setAiUsageSummary(null);
+    }
+  }, [loadAiUsage, token, user]);
 
   const handleAddCase = async () => {
     setCasesMessage(null);
@@ -326,6 +523,8 @@ function App() {
     setDocumentUploadError(null);
     setLiteratureResult(null);
     setComparisonSelection({ reportAId: "", reportBId: "" });
+    setCaseActivity([]);
+    setCaseActivityError(null);
   };
 
   const handleSaveCase = async () => {
@@ -447,6 +646,7 @@ function App() {
       }
       setDocumentFiles(null);
       await fetchDocuments(selectedCase.id);
+      await fetchCaseActivity(selectedCase.id);
     } catch (error: unknown) {
       setDocumentUploadError(error instanceof Error ? error.message : "שגיאה בהעלאת המסמכים.");
     } finally {
@@ -509,6 +709,7 @@ function App() {
       }
       setDocumentsError(null);
       setDocumentUploadMessage("המסמך נמחק.");
+      await fetchCaseActivity(selectedCase.id);
     } catch (error: unknown) {
       setDocumentsError(error instanceof Error ? error.message : "שגיאה במחיקת המסמך.");
     } finally {
@@ -551,6 +752,7 @@ function App() {
       setDetailError(error instanceof Error ? error.message : "שגיאה ביצירת הדו\"ח.");
     } finally {
       setInitialReportLoading(false);
+      await fetchCaseActivity(selectedCase.id);
     }
   };
 
@@ -603,6 +805,7 @@ function App() {
       setDetailError(error instanceof Error ? error.message : "שגיאה ביצירת דו\"ח ההשוואה.");
     } finally {
       setComparisonReportLoading(false);
+      await fetchCaseActivity(selectedCase.id);
     }
   };
 
@@ -641,32 +844,219 @@ function App() {
       setLiteratureError(error instanceof Error ? error.message : "שגיאה בחיפוש הספרות.");
     } finally {
       setLiteratureLoading(false);
+      await fetchCaseActivity(selectedCase.id);
     }
   };
 
-  const handleCopyReport = async (text: string | null, label: string) => {
+  const handleCopyReport = (text: string | null, label: string) => {
     if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      setDetailMessage(`${label} הועתק ללוח.`);
-    } catch {
-      setDetailError("לא ניתן להעתיק ללוח בדפדפן זה.");
-    }
+    void copyToClipboard(text, label);
   };
+
+  const renderCaseSidebar = () => (
+    <div className="sidebar-stack">
+      <div className="panel-card">
+        <h3 style={{ marginTop: 0 }}>צור תיק חדש</h3>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <input
+            type="text"
+            placeholder="שם תיק..."
+            value={newCaseName}
+            onChange={(event) => setNewCaseName(event.target.value)}
+            style={{
+              flex: 1,
+              padding: "8px",
+              borderRadius: "4px",
+              border: "1px solid #d1d5db",
+            }}
+          />
+          <button
+            type="button"
+            onClick={handleAddCase}
+            style={{
+              padding: "8px 12px",
+              borderRadius: "4px",
+              border: "none",
+              background: "#0d9488",
+              color: "white",
+              fontWeight: "bold",
+              cursor: "pointer",
+            }}
+          >
+            הוסף
+          </button>
+        </div>
+        {casesMessage && (
+          <p style={{ color: casesMessage.includes("שגיאה") ? "red" : "#0f766e", fontSize: "13px", marginTop: "8px" }}>
+            {casesMessage}
+          </p>
+        )}
+      </div>
+
+      <div className="panel-card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3 style={{ marginTop: 0 }}>התיקים שלי</h3>
+          {casesLoading && <span style={{ fontSize: "12px", color: "#6b7280" }}>טוען...</span>}
+        </div>
+        {casesError && <p style={{ color: "red", fontSize: "13px" }}>{casesError}</p>}
+        {!casesLoading && cases.length === 0 ? (
+          <p style={{ fontSize: "13px", color: "#555" }}>אין עדיין תיקים. אפשר להתחיל לפתוח תיק חדש.</p>
+        ) : (
+          <div style={{ maxHeight: "240px", overflowY: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: "6px" }}>שם התיק</th>
+                  <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: "6px" }}>בעלים</th>
+                  <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: "6px" }}>נוצר</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cases.map((caseItem) => (
+                  <tr key={caseItem.id}>
+                    <td
+                      style={{
+                        borderBottom: "1px solid #f3f4f6",
+                        padding: "6px",
+                        cursor: "pointer",
+                        color: "#2563eb",
+                        textDecoration: selectedCaseId === caseItem.id ? "underline" : "none",
+                      }}
+                      onClick={() => handleSelectCase(caseItem)}
+                    >
+                      {caseItem.name}
+                    </td>
+                    <td style={{ borderBottom: "1px solid #f3f4f6", padding: "6px" }}>{caseItem.owner}</td>
+                    <td style={{ borderBottom: "1px solid #f3f4f6", padding: "6px" }}>
+                      {new Date(caseItem.createdAt).toLocaleDateString("he-IL")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderCaseDetailsPanel = () => (
+    <div className="panel-card">
+      <h3 style={{ marginTop: 0 }}>פרטי תיק</h3>
+      {!selectedCase ? (
+        <p style={{ fontSize: "13px", color: "#555" }}>בחר תיק מהרשימה כדי לערוך את פרטיו.</p>
+      ) : (
+        <>
+          <div style={{ marginBottom: "12px" }}>
+            <label style={{ display: "block", marginBottom: "4px", fontSize: "13px" }}>שם התיק</label>
+            <input
+              type="text"
+              value={editName}
+              onChange={(event) => setEditName(event.target.value)}
+              style={{ width: "100%", padding: "8px", borderRadius: "4px", border: "1px solid #d1d5db" }}
+            />
+          </div>
+          <div style={{ marginBottom: "12px" }}>
+            <label style={{ display: "block", marginBottom: "4px", fontSize: "13px" }}>מאפייני פוקוס</label>
+            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+              {(
+                [
+                  { key: "negligence", label: "רשלנות" },
+                  { key: "causation", label: "קשר סיבתי" },
+                  { key: "lifeExpectancy", label: "תוחלת חיים / נזק" },
+                ] as Array<{ key: keyof FocusOptions; label: string }>
+              ).map((option) => (
+                <label key={option.key} style={{ fontSize: "13px" }}>
+                  <input
+                    type="checkbox"
+                    checked={editFocusOptions[option.key]}
+                    onChange={(event) =>
+                      setEditFocusOptions((prev) => ({
+                        ...prev,
+                        [option.key]: event.target.checked,
+                      }))
+                    }
+                    style={{ marginInlineStart: "8px" }}
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div style={{ marginBottom: "12px" }}>
+            <label style={{ display: "block", marginBottom: "4px", fontSize: "13px" }}>טקסט חופשי / הערות</label>
+            <textarea
+              value={editFocusText}
+              onChange={(event) => setEditFocusText(event.target.value)}
+              rows={4}
+              style={{
+                width: "100%",
+                padding: "8px",
+                borderRadius: "4px",
+                border: "1px solid #d1d5db",
+                resize: "vertical",
+              }}
+            />
+          </div>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              type="button"
+              onClick={handleSaveCase}
+              disabled={detailSaving}
+              style={{
+                flex: 1,
+                padding: "8px 12px",
+                borderRadius: "4px",
+                border: "none",
+                background: "#2563eb",
+                color: "white",
+                fontWeight: "bold",
+                cursor: detailSaving ? "default" : "pointer",
+              }}
+            >
+              {detailSaving ? "שומר..." : "שמור"}
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteCase}
+              disabled={detailDeleting}
+              style={{
+                flex: 1,
+                padding: "8px 12px",
+                borderRadius: "4px",
+                border: "none",
+                background: "#dc2626",
+                color: "white",
+                fontWeight: "bold",
+                cursor: detailDeleting ? "default" : "pointer",
+              }}
+            >
+              {detailDeleting ? "מוחק..." : "מחק"}
+            </button>
+          </div>
+          {detailMessage && <p style={{ color: "#0f766e", fontSize: "13px", marginTop: "8px" }}>{detailMessage}</p>}
+          {detailError && <p style={{ color: "red", fontSize: "13px", marginTop: "8px" }}>{detailError}</p>}
+          <div style={{ marginTop: "12px", fontSize: "12px", color: "#555" }}>
+            <div>
+              <strong>בעלים:</strong> {selectedCase.owner}
+            </div>
+            <div>
+              <strong>נוצר:</strong> {new Date(selectedCase.createdAt).toLocaleString("he-IL")}
+            </div>
+            <div>
+              <strong>מצב אפליקציה:</strong> {selectedCase.appState}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
 
   const renderDocumentsSection = () => {
     if (!selectedCase) return null;
 
     return (
-      <div
-        style={{
-          marginTop: "16px",
-          padding: "12px",
-          border: "1px solid #e5e7eb",
-          borderRadius: "6px",
-          background: "#f9fafb",
-        }}
-      >
+      <div className="panel-card">
         <h3 style={{ marginTop: 0, marginBottom: "8px" }}>מסמכים רפואיים / משפטיים</h3>
         <p style={{ fontSize: "12px", color: "#555" }}>
           ניתן להעלות קבצי PDF או DOCX (עד 10MB לקובץ). הטקסט מופק ונשמר במסד הנתונים.
@@ -783,41 +1173,6 @@ function App() {
               </tbody>
             </table>
           )}
-        </div>
-        {selectedDocumentText && (
-          <div
-            style={{
-              marginTop: "12px",
-              padding: "10px",
-              background: "white",
-              border: "1px solid #cbd5f5",
-              borderRadius: "4px",
-              maxHeight: "240px",
-              overflowY: "auto",
-              whiteSpace: "pre-wrap",
-              fontSize: "13px",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <strong>{selectedDocumentText.originalFilename}</strong>
-              <button
-                type="button"
-                onClick={() => setSelectedDocumentText(null)}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  color: "#2563eb",
-                  cursor: "pointer",
-                }}
-              >
-                סגור
-              </button>
-            </div>
-            <div style={{ marginTop: "8px" }}>
-              {selectedDocumentText.extractedText ? selectedDocumentText.extractedText : "לא נמצא טקסט במערכת."}
-            </div>
-          </div>
-        )}
       </div>
     );
   };
@@ -1045,9 +1400,19 @@ function App() {
                       {source.journal && <em>{source.journal}</em>}
                     </div>
                     {source.url && (
-                      <a href={source.url} target="_blank" rel="noreferrer" style={{ color: "#0ea5e9" }}>
-                        קישור למאמר
-                      </a>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <a href={source.url} target="_blank" rel="noreferrer" style={{ color: "#0ea5e9" }}>
+                          קישור למאמר
+                        </a>
+                        <button
+                          type="button"
+                          className="copy-chip"
+                          onClick={() => copyToClipboard(source.url ?? "", `הקישור למאמר ${source.title}`)}
+                          aria-label={`העתק קישור למאמר ${source.title}`}
+                        >
+                          העתק
+                        </button>
+                      </div>
                     )}
                     <div>תקציר: {source.summary}</div>
                     <div>משמעות הגנתית: {source.implication}</div>
@@ -1073,338 +1438,277 @@ function App() {
             <p style={{ fontSize: "13px", color: "#555" }}>טרם בוצע חיפוש ספרות עבור תיק זה.</p>
           )}
         </div>
+        {renderAiAnalyticsSection()}
       </div>
     );
   };
 
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "#f5f5f5",
-        fontFamily: "sans-serif",
-        direction: "rtl",
-      }}
-    >
+  function renderAiAnalyticsSection() {
+    if (!user || user.role !== "admin") {
+      return null;
+    }
+    return (
       <div
         style={{
-          background: "white",
-          padding: isCompactLayout ? "32px" : "24px",
-          borderRadius: "8px",
-          boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
-          width: "100%",
-          maxWidth: isCompactLayout ? "520px" : "1200px",
-          margin: "0 auto",
+          padding: "12px",
+          border: "1px solid #e5e7eb",
+          borderRadius: "6px",
+          background: "#fff7ed",
         }}
       >
-        <h1 style={{ marginBottom: "8px", textAlign: "center" }}>Medical Assistant</h1>
-        <div style={{ textAlign: "center", marginBottom: "16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+          <h3 style={{ margin: 0 }}>מעקב עלויות AI</h3>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <select
+              value={aiUsageRange}
+              onChange={(event) => setAiUsageRange(Number(event.target.value))}
+              style={{ padding: "4px 8px", borderRadius: "4px", border: "1px solid #fdba74", fontSize: "13px" }}
+            >
+              <option value={7}>7 ימים</option>
+              <option value={30}>30 ימים</option>
+              <option value={90}>90 ימים</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => loadAiUsage()}
+              disabled={aiUsageLoading}
+              style={{
+                padding: "6px 10px",
+                borderRadius: "4px",
+                border: "1px solid #fb923c",
+                background: "white",
+                color: "#ea580c",
+                cursor: aiUsageLoading ? "default" : "pointer",
+              }}
+            >
+              רענן
+            </button>
+          </div>
+        </div>
+        {aiUsageError && <p style={{ color: "red", fontSize: "13px" }}>{aiUsageError}</p>}
+        {aiUsageLoading || !aiUsageSummary ? (
+          <p style={{ fontSize: "13px" }}>טוען נתונים...</p>
+        ) : (
+          <>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                gap: "12px",
+                marginTop: "12px",
+                fontSize: "13px",
+              }}
+            >
+              <div style={{ background: "#fff", borderRadius: "6px", padding: "8px", border: "1px solid #fed7aa" }}>
+                <div style={{ color: "#9a3412" }}>סה"כ קריאות</div>
+                <strong style={{ fontSize: "18px" }}>{aiUsageSummary.summary.totalCalls}</strong>
+              </div>
+              <div style={{ background: "#fff", borderRadius: "6px", padding: "8px", border: "1px solid #fed7aa" }}>
+                <div style={{ color: "#9a3412" }}>עלות משוערת</div>
+                <strong style={{ fontSize: "18px" }}>${aiUsageSummary.summary.totalCostUsd.toFixed(4)}</strong>
+              </div>
+              <div style={{ background: "#fff", borderRadius: "6px", padding: "8px", border: "1px solid #fed7aa" }}>
+                <div style={{ color: "#9a3412" }}>זמן ממוצע</div>
+                <strong style={{ fontSize: "18px" }}>{Math.round(aiUsageSummary.summary.avgDurationMs)}ms</strong>
+              </div>
+              <div style={{ background: "#fff", borderRadius: "6px", padding: "8px", border: "1px solid #fed7aa" }}>
+                <div style={{ color: "#9a3412" }}>סה"כ טוקנים</div>
+                <strong style={{ fontSize: "18px" }}>{aiUsageSummary.summary.totalTokens}</strong>
+              </div>
+            </div>
+            {aiUsageSummary.byAction.length > 0 && (
+              <div style={{ marginTop: "12px" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: "right", borderBottom: "1px solid #fed7aa", padding: "6px" }}>פעולה</th>
+                      <th style={{ textAlign: "right", borderBottom: "1px solid #fed7aa", padding: "6px" }}>קריאות</th>
+                      <th style={{ textAlign: "right", borderBottom: "1px solid #fed7aa", padding: "6px" }}>עלות</th>
+                      <th style={{ textAlign: "right", borderBottom: "1px solid #fed7aa", padding: "6px" }}>
+                        זמן ממוצע
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {aiUsageSummary.byAction.map((action) => (
+                      <tr key={action.action}>
+                        <td style={{ borderBottom: "1px solid #fff7ed", padding: "6px" }}>{action.action}</td>
+                        <td style={{ borderBottom: "1px solid #fff7ed", padding: "6px" }}>{action.totalCalls}</td>
+                        <td style={{ borderBottom: "1px solid #fff7ed", padding: "6px" }}>
+                          ${action.totalCostUsd.toFixed(4)}
+                        </td>
+                        <td style={{ borderBottom: "1px solid #fff7ed", padding: "6px" }}>
+                          {Math.round(action.avgDurationMs)}ms
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {aiUsageSummary.recent.length > 0 && (
+              <div style={{ marginTop: "12px" }}>
+                <strong style={{ fontSize: "13px" }}>פעולות אחרונות:</strong>
+                <ul style={{ listStyle: "none", padding: 0, margin: "8px 0 0", fontSize: "12px" }}>
+                  {aiUsageSummary.recent.slice(0, 5).map((event) => (
+                    <li key={event.id} style={{ borderBottom: "1px solid #ffe4c7", padding: "6px 0" }}>
+                      {new Date(event.createdAt).toLocaleString("he-IL")} · {event.action} ·{" "}
+                      {event.status === "success" ? "הצלחה" : "שגיאה"} ·{" "}
+                      {event.costUsd ? `$${event.costUsd.toFixed(4)}` : "ללא עלות"}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  const renderDocumentModal = () => {
+    if (!selectedDocumentText) {
+      return null;
+    }
+    return (
+      <div className="modal-overlay">
+        <div className="modal-card">
+          <div className="modal-header">
+            <div>
+              <strong>{selectedDocumentText.originalFilename}</strong>
+              <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                הועלה ב-{new Date(selectedDocumentText.createdAt).toLocaleString("he-IL")}
+              </div>
+            </div>
+            <button type="button" className="modal-close" onClick={() => setSelectedDocumentText(null)}>
+              ✕
+            </button>
+          </div>
+          <div className="modal-body">
+            {highlightedDocumentParagraphs.length === 0 ? (
+              <p style={{ fontSize: "13px", color: "#555" }}>לא נמצא טקסט זמין למסמך זה.</p>
+            ) : (
+              highlightedDocumentParagraphs.map((paragraph) => (
+                <p
+                  key={paragraph.id}
+                  className={paragraph.highlight ? "highlighted-paragraph" : undefined}
+                  style={{ fontSize: "13px", lineHeight: 1.6 }}
+                >
+                  {paragraph.text}
+                </p>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderTimelinePanel = () => {
+    if (!selectedCase) {
+      return null;
+    }
+
+    return (
+      <div className="panel-card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3 style={{ margin: 0 }}>ציר זמן</h3>
+          <button
+            type="button"
+            onClick={() => fetchCaseActivity(selectedCase.id)}
+            style={{ border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", fontSize: "13px" }}
+          >
+            רענן
+          </button>
+        </div>
+        {caseActivityError && <p style={{ color: "red", fontSize: "13px" }}>{caseActivityError}</p>}
+        {caseActivityLoading ? (
+          <p style={{ fontSize: "13px" }}>טוען אירועים...</p>
+        ) : caseActivity.length === 0 ? (
+          <p style={{ fontSize: "13px", color: "#555" }}>טרם נרשמו אירועים בתיק זה.</p>
+        ) : (
+          <ul className="timeline-list" style={{ marginTop: "12px" }}>
+            {caseActivity.slice(0, 18).map((event) => (
+              <li key={event.id} className="timeline-item">
+                <p className="timeline-title">{event.title}</p>
+                <p className="timeline-meta">{formatDateTime(event.timestamp)}</p>
+                {event.description && (
+                  <p style={{ fontSize: "12px", color: "#475569", marginTop: "4px" }}>{event.description}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  };
+
+  const showWorkspace = Boolean(user && activeTab === "cases");
+  const showLoginView = !user || activeTab === "login";
+
+  return (
+    <div className="app-shell">
+      <header className="app-toolbar">
+        <div className="toolbar-left">
           <object
             data="/logo-lior-perry.pdf#toolbar=0&navpanes=0"
             type="application/pdf"
-            style={{ width: "180px", height: "180px" }}
+            className="toolbar-logo"
           >
-            <p style={{ fontSize: "12px", color: "#777" }}>לוגו המשרד</p>
+            <p>Logo</p>
           </object>
+          <div>
+            <div className="app-title">Medical Assistant</div>
+            <div className="app-subtitle">Lior Perry Law Office</div>
+          </div>
         </div>
-        <p style={{ fontSize: "12px", marginBottom: "16px", color: "#555", textAlign: "center" }}>
-          כתובת ה-Backend: <strong>{API_BASE_URL}</strong>
-        </p>
-
-        <div style={{ display: "flex", marginBottom: "16px", borderBottom: "1px solid #e5e7eb" }}>
-          <button
-            type="button"
-            onClick={() => setActiveTab("login")}
-            style={{
-              flex: 1,
-              padding: "8px",
-              border: "none",
-              borderBottom: activeTab === "login" ? "3px solid #2563eb" : "3px solid transparent",
-              background: "transparent",
-              cursor: "pointer",
-              fontWeight: activeTab === "login" ? "bold" : "normal",
-            }}
-          >
-            התחברות
-          </button>
-          <button
-            type="button"
-            onClick={() => user && setActiveTab("cases")}
-            disabled={!user}
-            style={{
-              flex: 1,
-              padding: "8px",
-              border: "none",
-              borderBottom: activeTab === "cases" ? "3px solid #2563eb" : "3px solid transparent",
-              background: "transparent",
-              cursor: user ? "pointer" : "not-allowed",
-              opacity: user ? 1 : 0.5,
-              fontWeight: activeTab === "cases" ? "bold" : "normal",
-            }}
-          >
-            תיקים
-          </button>
-        </div>
-
-        {activeTab === "login" && (
-          <form onSubmit={handleLoginSubmit}>
-            <div style={{ marginBottom: "12px" }}>
-              <label style={{ display: "block", marginBottom: "4px" }}>Username</label>
-              <input
-                type="text"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                style={{ width: "100%", padding: "8px", borderRadius: "4px", border: "1px solid #ccc" }}
-              />
-            </div>
-            <div style={{ marginBottom: "12px" }}>
-              <label style={{ display: "block", marginBottom: "4px" }}>Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                style={{ width: "100%", padding: "8px", borderRadius: "4px", border: "1px solid #ccc" }}
-              />
-            </div>
-            {loginError && <p style={{ color: "red", fontSize: "14px" }}>{loginError}</p>}
-            <button
-              type="submit"
-              disabled={loginLoading}
-              style={{
-                width: "100%",
-                padding: "10px",
-                borderRadius: "4px",
-                border: "none",
-                background: "#2563eb",
-                color: "white",
-                fontWeight: "bold",
-                cursor: loginLoading ? "default" : "pointer",
-              }}
-            >
-              {loginLoading ? "מתחבר..." : "התחברות"}
-            </button>
-            {user && (
-              <div
-                style={{
-                  marginTop: "16px",
-                  padding: "12px",
-                  borderRadius: "4px",
-                  background: "#ecfdf5",
-                  border: "1px solid #4ade80",
-                  fontSize: "14px",
-                }}
-              >
-                <div>
-                  מחובר בתור: <strong>{user.username}</strong>
-                </div>
-                <div>
-                  תפקיד: <strong>{user.role}</strong>
-                </div>
-              </div>
-            )}
-          </form>
-        )}
-
-        {activeTab === "cases" &&
-          (user ? (
-              <div style={{ display: "flex", gap: "16px", alignItems: "flex-start" }}>
-                <div style={{ flex: 1 }}>
-                  <h2 style={{ marginBottom: "12px" }}>התיקים שלי</h2>
-                <div style={{ marginBottom: "12px", display: "flex", gap: "8px" }}>
-                    <input
-                      type="text"
-                      placeholder="שם תיק חדש..."
-                      value={newCaseName}
-                    onChange={(event) => setNewCaseName(event.target.value)}
-                    style={{ flex: 1, padding: "8px", borderRadius: "4px", border: "1px solid #ccc" }}
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddCase}
-                      style={{
-                        padding: "8px 12px",
-                        borderRadius: "4px",
-                        border: "none",
-                        background: "#16a34a",
-                        color: "white",
-                        fontWeight: "bold",
-                        cursor: "pointer",
-                      }}
-                    >
-                      הוסף תיק
-                    </button>
-                  </div>
-                  {casesMessage && (
-                  <p style={{ color: casesMessage.includes("שגיאה") ? "red" : "green", fontSize: "14px" }}>
-                      {casesMessage}
-                  </p>
-                  )}
-                  {casesLoading && <p>טוען תיקים...</p>}
-                {casesError && <p style={{ color: "red", fontSize: "14px" }}>{casesError}</p>}
-                  {!casesLoading && cases.length === 0 ? (
-                    <p style={{ fontSize: "14px", color: "#555" }}>
-                    אין עדיין תיקים. אפשר להתחיל על ידי הזנת שם תיק ולחיצה על &quot;הוסף תיק&quot;.
-                    </p>
-                  ) : (
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
-                      <thead>
-                        <tr>
-                        <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: "8px" }}>
-                            שם התיק
-                          </th>
-                        <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: "8px" }}>
-                            בעלים
-                          </th>
-                        <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: "8px" }}>
-                            נוצר בתאריך
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                      {cases.map((caseItem) => (
-                        <tr key={caseItem.id}>
-                            <td
-                              style={{
-                                borderBottom: "1px solid #f3f4f6",
-                                padding: "8px",
-                                cursor: "pointer",
-                                color: "#2563eb",
-                                textDecoration: "underline",
-                              }}
-                            onClick={() => handleSelectCase(caseItem)}
-                            >
-                            {caseItem.name}
-                            </td>
-                          <td style={{ borderBottom: "1px solid #f3f4f6", padding: "8px" }}>{caseItem.owner}</td>
-                          <td style={{ borderBottom: "1px solid #f3f4f6", padding: "8px" }}>
-                            {new Date(caseItem.createdAt).toLocaleString("he-IL")}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-
-              <div style={{ width: "420px", borderLeft: "1px solid #e5e7eb", paddingLeft: "16px" }}>
-                  <h2 style={{ marginBottom: "12px" }}>פרטי תיק</h2>
-                  {!selectedCase ? (
-                  <p style={{ fontSize: "14px", color: "#555" }}>בחר תיק מהרשימה כדי לראות ולערוך את פרטיו.</p>
-                  ) : (
-                    <>
-                      <div style={{ marginBottom: "12px" }}>
-                      <label style={{ display: "block", marginBottom: "4px" }}>שם התיק</label>
-                        <input
-                          type="text"
-                          value={editName}
-                        onChange={(event) => setEditName(event.target.value)}
-                        style={{ width: "100%", padding: "8px", borderRadius: "4px", border: "1px solid #ccc" }}
-                        />
-                      </div>
-                      <div style={{ marginBottom: "12px" }}>
-                      <label style={{ display: "block", marginBottom: "4px" }}>מאפייני פוקוס</label>
-                      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-                        {(
-                          [
-                            { key: "negligence", label: "רשלנות" },
-                            { key: "causation", label: "קשר סיבתי" },
-                            { key: "lifeExpectancy", label: "תוחלת חיים / נזק" },
-                          ] as Array<{ key: keyof FocusOptions; label: string }>
-                        ).map((option) => (
-                          <label key={option.key} style={{ fontSize: "13px" }}>
-                            <input
-                              type="checkbox"
-                              checked={editFocusOptions[option.key]}
-                              onChange={(event) =>
-                                setEditFocusOptions((prev) => ({
-                                  ...prev,
-                                  [option.key]: event.target.checked,
-                                }))
-                              }
-                              style={{ marginInlineStart: "8px" }}
-                            />
-                            {option.label}
-                        </label>
-                        ))}
-                      </div>
-                    </div>
-                    <div style={{ marginBottom: "12px" }}>
-                      <label style={{ display: "block", marginBottom: "4px" }}>טקסט חופשי / הערות</label>
-                        <textarea
-                          value={editFocusText}
-                        onChange={(event) => setEditFocusText(event.target.value)}
-                        rows={5}
-                          style={{
-                            width: "100%",
-                            padding: "8px",
-                            borderRadius: "4px",
-                            border: "1px solid #ccc",
-                            resize: "vertical",
-                          }}
-                        />
-                      </div>
-                    <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
-                        <button
-                          type="button"
-                          onClick={handleSaveCase}
-                          disabled={detailSaving}
-                          style={{
-                            flex: 1,
-                            padding: "8px 12px",
-                            borderRadius: "4px",
-                            border: "none",
-                            background: "#2563eb",
-                            color: "white",
-                            fontWeight: "bold",
-                            cursor: detailSaving ? "default" : "pointer",
-                          }}
-                        >
-                          {detailSaving ? "שומר..." : "שמור שינויים"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleDeleteCase}
-                          disabled={detailDeleting}
-                          style={{
-                            padding: "8px 12px",
-                            borderRadius: "4px",
-                            border: "none",
-                            background: "#dc2626",
-                            color: "white",
-                            fontWeight: "bold",
-                            cursor: detailDeleting ? "default" : "pointer",
-                          }}
-                        >
-                          {detailDeleting ? "מוחק..." : "מחק תיק"}
-                        </button>
-                      </div>
-                    {detailMessage && <p style={{ color: "green", fontSize: "14px" }}>{detailMessage}</p>}
-                    {detailError && <p style={{ color: "red", fontSize: "14px" }}>{detailError}</p>}
-                    <div style={{ marginTop: "12px", fontSize: "12px", color: "#555" }}>
-                        <div>
-                          <strong>בעלים:</strong> {selectedCase.owner}
-                        </div>
-                        <div>
-                          <strong>נוצר בתאריך:</strong>{" "}
-                          {new Date(selectedCase.createdAt).toLocaleString("he-IL")}
-                        </div>
-                        <div>
-                        <strong>מצב אפליקציה:</strong> {selectedCase.appState}
-                        </div>
-                      </div>
-                    {renderDocumentsSection()}
-                    {renderReportSection()}
-                    </>
-                  )}
-                </div>
-              </div>
+        <div className="toolbar-right">
+          <span className="backend-url">Backend: {API_BASE_URL}</span>
+          {user ? (
+            <>
+              <span>שלום, {user.username}</span>
+              <button type="button" className="ghost-btn" onClick={handleLogout}>
+                יציאה
+              </button>
+            </>
           ) : (
-            <p style={{ color: "red", fontSize: "14px" }}>צריך להתחבר לפני שמציגים תיקים.</p>
-          ))}
+            <span>לא מחובר</span>
+          )}
+        </div>
+      </header>
+
+      <div className="app-body">
+        {showLoginView ? (
+          <div className="login-card">
+            <h2>התחברות</h2>
+            <form onSubmit={handleLoginSubmit} style={{ width: "100%" }}>
+              <div className="form-field">
+                <label>Username</label>
+                <input type="text" value={username} onChange={(event) => setUsername(event.target.value)} />
+              </div>
+              <div className="form-field">
+                <label>Password</label>
+                <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+              </div>
+              {loginError && <p className="error-text">{loginError}</p>}
+              <button type="submit" className="primary-btn" disabled={loginLoading}>
+                {loginLoading ? "מתחבר..." : "התחברות"}
+              </button>
+            </form>
+          </div>
+        ) : showWorkspace ? (
+          <div className="workspace-grid">
+            <aside className="sidebar-column">{renderCaseSidebar()}</aside>
+            <div className="workspace-column" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              {renderCaseDetailsPanel()}
+              {renderDocumentsSection()}
+              {renderTimelinePanel()}
+            </div>
+            <div className="workspace-column">{renderReportSection()}</div>
+          </div>
+        ) : null}
       </div>
+      {renderDocumentModal()}
     </div>
   );
 }
