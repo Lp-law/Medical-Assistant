@@ -980,8 +980,11 @@ function App() {
         }}
       >
         <h1 style={{ marginBottom: "8px", textAlign: "center" }}>
-          Legal Assistant – מערכת ניהול תיקים
+          Medical Assistant – מערכת ניהול תיקים
         </h1>
+        <div style={{ textAlign: "center", marginBottom: "16px" }}>
+          <img src="/logo-lior-perry.png" alt="Lior Perry Law Office" style={{ maxWidth: "140px" }} />
+        </div>
         <p style={{ fontSize: "12px", marginBottom: "16px", color: "#555", textAlign: "center" }}>
           כתובת ה-Backend: <strong>{API_BASE_URL}</strong>
         </p>
@@ -1082,101 +1085,101 @@ function App() {
 
         {activeTab === "cases" &&
           (user ? (
-            <div style={{ display: "flex", gap: "16px", alignItems: "flex-start" }}>
-              <div style={{ flex: 1 }}>
-                <h2 style={{ marginBottom: "12px" }}>התיקים שלי</h2>
+              <div style={{ display: "flex", gap: "16px", alignItems: "flex-start" }}>
+                <div style={{ flex: 1 }}>
+                  <h2 style={{ marginBottom: "12px" }}>התיקים שלי</h2>
                 <div style={{ marginBottom: "12px", display: "flex", gap: "8px" }}>
-                  <input
-                    type="text"
-                    placeholder="שם תיק חדש..."
-                    value={newCaseName}
+                    <input
+                      type="text"
+                      placeholder="שם תיק חדש..."
+                      value={newCaseName}
                     onChange={(event) => setNewCaseName(event.target.value)}
                     style={{ flex: 1, padding: "8px", borderRadius: "4px", border: "1px solid #ccc" }}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddCase}
-                    style={{
-                      padding: "8px 12px",
-                      borderRadius: "4px",
-                      border: "none",
-                      background: "#16a34a",
-                      color: "white",
-                      fontWeight: "bold",
-                      cursor: "pointer",
-                    }}
-                  >
-                    הוסף תיק
-                  </button>
-                </div>
-                {casesMessage && (
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCase}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: "4px",
+                        border: "none",
+                        background: "#16a34a",
+                        color: "white",
+                        fontWeight: "bold",
+                        cursor: "pointer",
+                      }}
+                    >
+                      הוסף תיק
+                    </button>
+                  </div>
+                  {casesMessage && (
                   <p style={{ color: casesMessage.includes("שגיאה") ? "red" : "green", fontSize: "14px" }}>
-                    {casesMessage}
+                      {casesMessage}
                   </p>
-                )}
-                {casesLoading && <p>טוען תיקים...</p>}
+                  )}
+                  {casesLoading && <p>טוען תיקים...</p>}
                 {casesError && <p style={{ color: "red", fontSize: "14px" }}>{casesError}</p>}
-                {!casesLoading && cases.length === 0 ? (
-                  <p style={{ fontSize: "14px", color: "#555" }}>
+                  {!casesLoading && cases.length === 0 ? (
+                    <p style={{ fontSize: "14px", color: "#555" }}>
                     אין עדיין תיקים. אפשר להתחיל על ידי הזנת שם תיק ולחיצה על &quot;הוסף תיק&quot;.
-                  </p>
-                ) : (
+                    </p>
+                  ) : (
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
-                    <thead>
-                      <tr>
+                      <thead>
+                        <tr>
                         <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: "8px" }}>
-                          שם התיק
-                        </th>
+                            שם התיק
+                          </th>
                         <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: "8px" }}>
-                          בעלים
-                        </th>
+                            בעלים
+                          </th>
                         <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: "8px" }}>
-                          נוצר בתאריך
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                            נוצר בתאריך
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
                       {cases.map((caseItem) => (
                         <tr key={caseItem.id}>
-                          <td
-                            style={{
-                              borderBottom: "1px solid #f3f4f6",
-                              padding: "8px",
-                              cursor: "pointer",
-                              color: "#2563eb",
-                              textDecoration: "underline",
-                            }}
+                            <td
+                              style={{
+                                borderBottom: "1px solid #f3f4f6",
+                                padding: "8px",
+                                cursor: "pointer",
+                                color: "#2563eb",
+                                textDecoration: "underline",
+                              }}
                             onClick={() => handleSelectCase(caseItem)}
-                          >
+                            >
                             {caseItem.name}
-                          </td>
+                            </td>
                           <td style={{ borderBottom: "1px solid #f3f4f6", padding: "8px" }}>{caseItem.owner}</td>
                           <td style={{ borderBottom: "1px solid #f3f4f6", padding: "8px" }}>
                             {new Date(caseItem.createdAt).toLocaleString("he-IL")}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
 
               <div style={{ width: "420px", borderLeft: "1px solid #e5e7eb", paddingLeft: "16px" }}>
-                <h2 style={{ marginBottom: "12px" }}>פרטי תיק</h2>
-                {!selectedCase ? (
+                  <h2 style={{ marginBottom: "12px" }}>פרטי תיק</h2>
+                  {!selectedCase ? (
                   <p style={{ fontSize: "14px", color: "#555" }}>בחר תיק מהרשימה כדי לראות ולערוך את פרטיו.</p>
-                ) : (
-                  <>
-                    <div style={{ marginBottom: "12px" }}>
+                  ) : (
+                    <>
+                      <div style={{ marginBottom: "12px" }}>
                       <label style={{ display: "block", marginBottom: "4px" }}>שם התיק</label>
-                      <input
-                        type="text"
-                        value={editName}
+                        <input
+                          type="text"
+                          value={editName}
                         onChange={(event) => setEditName(event.target.value)}
                         style={{ width: "100%", padding: "8px", borderRadius: "4px", border: "1px solid #ccc" }}
-                      />
-                    </div>
-                    <div style={{ marginBottom: "12px" }}>
+                        />
+                      </div>
+                      <div style={{ marginBottom: "12px" }}>
                       <label style={{ display: "block", marginBottom: "4px" }}>מאפייני פוקוס</label>
                       <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
                         {(
@@ -1199,80 +1202,80 @@ function App() {
                               style={{ marginInlineStart: "8px" }}
                             />
                             {option.label}
-                          </label>
+                        </label>
                         ))}
                       </div>
                     </div>
                     <div style={{ marginBottom: "12px" }}>
                       <label style={{ display: "block", marginBottom: "4px" }}>טקסט חופשי / הערות</label>
-                      <textarea
-                        value={editFocusText}
+                        <textarea
+                          value={editFocusText}
                         onChange={(event) => setEditFocusText(event.target.value)}
                         rows={5}
-                        style={{
-                          width: "100%",
-                          padding: "8px",
-                          borderRadius: "4px",
-                          border: "1px solid #ccc",
-                          resize: "vertical",
-                        }}
-                      />
-                    </div>
+                          style={{
+                            width: "100%",
+                            padding: "8px",
+                            borderRadius: "4px",
+                            border: "1px solid #ccc",
+                            resize: "vertical",
+                          }}
+                        />
+                      </div>
                     <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
-                      <button
-                        type="button"
-                        onClick={handleSaveCase}
-                        disabled={detailSaving}
-                        style={{
-                          flex: 1,
-                          padding: "8px 12px",
-                          borderRadius: "4px",
-                          border: "none",
-                          background: "#2563eb",
-                          color: "white",
-                          fontWeight: "bold",
-                          cursor: detailSaving ? "default" : "pointer",
-                        }}
-                      >
-                        {detailSaving ? "שומר..." : "שמור שינויים"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleDeleteCase}
-                        disabled={detailDeleting}
-                        style={{
-                          padding: "8px 12px",
-                          borderRadius: "4px",
-                          border: "none",
-                          background: "#dc2626",
-                          color: "white",
-                          fontWeight: "bold",
-                          cursor: detailDeleting ? "default" : "pointer",
-                        }}
-                      >
-                        {detailDeleting ? "מוחק..." : "מחק תיק"}
-                      </button>
-                    </div>
+                        <button
+                          type="button"
+                          onClick={handleSaveCase}
+                          disabled={detailSaving}
+                          style={{
+                            flex: 1,
+                            padding: "8px 12px",
+                            borderRadius: "4px",
+                            border: "none",
+                            background: "#2563eb",
+                            color: "white",
+                            fontWeight: "bold",
+                            cursor: detailSaving ? "default" : "pointer",
+                          }}
+                        >
+                          {detailSaving ? "שומר..." : "שמור שינויים"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDeleteCase}
+                          disabled={detailDeleting}
+                          style={{
+                            padding: "8px 12px",
+                            borderRadius: "4px",
+                            border: "none",
+                            background: "#dc2626",
+                            color: "white",
+                            fontWeight: "bold",
+                            cursor: detailDeleting ? "default" : "pointer",
+                          }}
+                        >
+                          {detailDeleting ? "מוחק..." : "מחק תיק"}
+                        </button>
+                      </div>
                     {detailMessage && <p style={{ color: "green", fontSize: "14px" }}>{detailMessage}</p>}
                     {detailError && <p style={{ color: "red", fontSize: "14px" }}>{detailError}</p>}
                     <div style={{ marginTop: "12px", fontSize: "12px", color: "#555" }}>
-                      <div>
-                        <strong>בעלים:</strong> {selectedCase.owner}
-                      </div>
-                      <div>
-                        <strong>נוצר בתאריך:</strong>{" "}
-                        {new Date(selectedCase.createdAt).toLocaleString("he-IL")}
-                      </div>
-                      <div>
+                        <div>
+                          <strong>בעלים:</strong> {selectedCase.owner}
+                        </div>
+                        <div>
+                          <strong>נוצר בתאריך:</strong>{" "}
+                          {new Date(selectedCase.createdAt).toLocaleString("he-IL")}
+                        </div>
+                        <div>
                         <strong>מצב אפליקציה:</strong> {selectedCase.appState}
+                        </div>
                       </div>
-                    </div>
                     {renderDocumentsSection()}
                     {renderReportSection()}
-                  </>
-                )}
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
           ) : (
             <p style={{ color: "red", fontSize: "14px" }}>צריך להתחבר לפני שמציגים תיקים.</p>
           ))}
