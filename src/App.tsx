@@ -80,6 +80,21 @@ interface CaseDocument extends CaseDocumentSummary {
   extractedText: string | null;
 }
 
+interface DocumentClaim {
+  id: string;
+  caseId: string;
+  documentId: string;
+  orderIndex: number;
+  claimTitle: string;
+  claimSummary: string;
+  category: string;
+  confidence: number | null;
+  sourceExcerpt: string | null;
+  recommendation: string | null;
+  tags: string[];
+  createdAt: string;
+}
+
 interface LiteratureSource {
   title: string;
   journal?: string;
@@ -264,6 +279,12 @@ function App() {
   const [documentTextLoadingId, setDocumentTextLoadingId] = useState<string | null>(null);
   const [documentDeletingId, setDocumentDeletingId] = useState<string | null>(null);
   const [selectedDocumentText, setSelectedDocumentText] = useState<CaseDocument | null>(null);
+  const [claimsByDocument, setClaimsByDocument] = useState<Record<string, DocumentClaim[]>>({});
+  const [claimsModalDocument, setClaimsModalDocument] = useState<CaseDocumentSummary | null>(null);
+  const [claimsLoadingId, setClaimsLoadingId] = useState<string | null>(null);
+  const [claimsExtractingId, setClaimsExtractingId] = useState<string | null>(null);
+  const [claimsMessage, setClaimsMessage] = useState<string | null>(null);
+  const [claimsError, setClaimsError] = useState<string | null>(null);
 
   const [initialReportLoading, setInitialReportLoading] = useState(false);
   const [comparisonReportLoading, setComparisonReportLoading] = useState(false);
@@ -541,6 +562,12 @@ function App() {
     setDetailError(null);
     setDocumentUploadMessage(null);
     setDocumentUploadError(null);
+    setClaimsByDocument({});
+    setClaimsModalDocument(null);
+    setClaimsMessage(null);
+    setClaimsError(null);
+    setClaimsLoadingId(null);
+    setClaimsExtractingId(null);
     setLiteratureResult(null);
     setComparisonSelection({ reportAId: "", reportBId: "" });
     setCaseActivity([]);
@@ -727,6 +754,17 @@ function App() {
       if (selectedDocumentText?.id === docId) {
         setSelectedDocumentText(null);
       }
+      setClaimsByDocument((prev) => {
+        if (!prev[docId]) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[docId];
+        return next;
+      });
+      if (claimsModalDocument?.id === docId) {
+        setClaimsModalDocument(null);
+      }
       setDocumentsError(null);
       setDocumentUploadMessage("המסמך נמחק.");
       await fetchCaseActivity(selectedCase.id);
@@ -734,6 +772,80 @@ function App() {
       setDocumentsError(error instanceof Error ? error.message : "שגיאה במחיקת המסמך.");
     } finally {
       setDocumentDeletingId(null);
+    }
+  };
+
+  const handleViewDocumentClaims = async (doc: CaseDocumentSummary) => {
+    if (!selectedCase || !token) {
+      setClaimsError("צריך לבחור תיק ולהתחבר.");
+      return;
+    }
+    setClaimsLoadingId(doc.id);
+    setClaimsError(null);
+    setClaimsMessage(null);
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/cases/${selectedCase.id}/documents/${doc.id}/claims`,
+        { headers: authHeaders }
+      );
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || "שגיאה בטעינת הטענות.");
+      }
+
+      const claimList: DocumentClaim[] = await response.json();
+      setClaimsByDocument((prev) => ({ ...prev, [doc.id]: claimList }));
+      setClaimsModalDocument(doc);
+      if (claimList.length === 0) {
+        setClaimsMessage("טרם נוצרו טענות למסמך זה.");
+      }
+    } catch (error: unknown) {
+      setClaimsError(error instanceof Error ? error.message : "שגיאה בטעינת הטענות.");
+    } finally {
+      setClaimsLoadingId(null);
+    }
+  };
+
+  const handleExtractDocumentClaims = async (doc: CaseDocumentSummary) => {
+    if (!selectedCase || !token) {
+      setClaimsError("צריך לבחור תיק ולהתחבר.");
+      return;
+    }
+
+    setClaimsExtractingId(doc.id);
+    setClaimsError(null);
+    setClaimsMessage(null);
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/cases/${selectedCase.id}/documents/${doc.id}/claims/extract`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeaders,
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "שגיאה בחילוץ הטענות מהמסמך.");
+      }
+
+      const claimList = data.claims as DocumentClaim[];
+      setClaimsByDocument((prev) => ({ ...prev, [doc.id]: claimList }));
+      setClaimsModalDocument(doc);
+      setClaimsMessage(
+        claimList.length > 0 ? "הטענות הופקו בהצלחה." : "לא נמצאו טענות חדשות במסמך."
+      );
+    } catch (error: unknown) {
+      setClaimsError(error instanceof Error ? error.message : "שגיאה בחילוץ הטענות.");
+    } finally {
+      setClaimsExtractingId(null);
     }
   };
 
@@ -1133,6 +1245,12 @@ function App() {
         {documentsError && (
           <p style={{ color: "red", fontSize: "13px", marginTop: "4px" }}>{documentsError}</p>
         )}
+        {claimsMessage && (
+          <p style={{ color: "#0f766e", fontSize: "12px", marginTop: "4px" }}>{claimsMessage}</p>
+        )}
+        {claimsError && (
+          <p style={{ color: "red", fontSize: "12px", marginTop: "4px" }}>{claimsError}</p>
+        )}
         <div style={{ marginTop: "12px" }}>
           {documentsLoading ? (
             <p>טוען מסמכים...</p>
@@ -1155,59 +1273,96 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {documents.map((doc) => (
-                  <tr key={doc.id}>
-                    <td
-                      style={{
-                        padding: "6px",
-                        borderBottom: "1px solid #f3f4f6",
-                        wordBreak: "break-word",
-                      }}
-                    >
-                      {doc.originalFilename}
-                    </td>
-                    <td style={{ padding: "6px", borderBottom: "1px solid #f3f4f6" }}>
-                      {formatBytes(doc.sizeBytes)}
-                    </td>
-                    <td style={{ padding: "6px", borderBottom: "1px solid #f3f4f6" }}>
-                      {new Date(doc.createdAt).toLocaleString("he-IL")}
-                    </td>
-                    <td style={{ padding: "6px", borderBottom: "1px solid #f3f4f6", textAlign: "left" }}>
-                      <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
-                        <button
-                          type="button"
-                          onClick={() => handleViewDocumentText(doc.id)}
-                          disabled={documentTextLoadingId === doc.id}
-                          style={{
-                            padding: "6px 10px",
-                            borderRadius: "4px",
-                            border: "1px solid #2563eb",
-                            background: "white",
-                            color: "#2563eb",
-                            cursor: documentTextLoadingId === doc.id ? "default" : "pointer",
-                          }}
-                        >
-                          {documentTextLoadingId === doc.id ? "טוען..." : "צפה בטקסט"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteDocument(doc.id)}
-                          disabled={documentDeletingId === doc.id}
-                          style={{
-                            padding: "6px 10px",
-                            borderRadius: "4px",
-                            border: "1px solid #dc2626",
-                            background: "white",
-                            color: "#dc2626",
-                            cursor: documentDeletingId === doc.id ? "default" : "pointer",
-                          }}
-                        >
-                          {documentDeletingId === doc.id ? "מוחק..." : "מחק"}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {documents.map((doc) => {
+                  const isTextLoading = documentTextLoadingId === doc.id;
+                  const isDeleting = documentDeletingId === doc.id;
+                  const isClaimsLoading = claimsLoadingId === doc.id;
+                  const isClaimsExtracting = claimsExtractingId === doc.id;
+
+                  return (
+                    <tr key={doc.id}>
+                      <td
+                        style={{
+                          padding: "6px",
+                          borderBottom: "1px solid #f3f4f6",
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {doc.originalFilename}
+                      </td>
+                      <td style={{ padding: "6px", borderBottom: "1px solid #f3f4f6" }}>
+                        {formatBytes(doc.sizeBytes)}
+                      </td>
+                      <td style={{ padding: "6px", borderBottom: "1px solid #f3f4f6" }}>
+                        {new Date(doc.createdAt).toLocaleString("he-IL")}
+                      </td>
+                      <td style={{ padding: "6px", borderBottom: "1px solid #f3f4f6", textAlign: "left" }}>
+                        <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            onClick={() => handleViewDocumentText(doc.id)}
+                            disabled={isTextLoading}
+                            style={{
+                              padding: "6px 10px",
+                              borderRadius: "4px",
+                              border: "1px solid #2563eb",
+                              background: "white",
+                              color: "#2563eb",
+                              cursor: isTextLoading ? "default" : "pointer",
+                            }}
+                          >
+                            {isTextLoading ? "טוען..." : "צפה בטקסט"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleViewDocumentClaims(doc)}
+                            disabled={isClaimsLoading}
+                            style={{
+                              padding: "6px 10px",
+                              borderRadius: "4px",
+                              border: "1px solid #0f766e",
+                              background: "white",
+                              color: "#0f766e",
+                              cursor: isClaimsLoading ? "default" : "pointer",
+                            }}
+                          >
+                            {isClaimsLoading ? "טוען טענות..." : "צפה בטענות"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleExtractDocumentClaims(doc)}
+                            disabled={isClaimsExtracting}
+                            style={{
+                              padding: "6px 10px",
+                              borderRadius: "4px",
+                              border: "1px solid #0d9488",
+                              background: "#0d9488",
+                              color: "white",
+                              cursor: isClaimsExtracting ? "default" : "pointer",
+                            }}
+                          >
+                            {isClaimsExtracting ? "מחלץ..." : "חילוץ טענות"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteDocument(doc.id)}
+                            disabled={isDeleting}
+                            style={{
+                              padding: "6px 10px",
+                              borderRadius: "4px",
+                              border: "1px solid #dc2626",
+                              background: "white",
+                              color: "#dc2626",
+                              cursor: isDeleting ? "default" : "pointer",
+                            }}
+                          >
+                            {isDeleting ? "מוחק..." : "מחק"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -1751,6 +1906,96 @@ function App() {
     );
   };
 
+  const renderClaimsModal = () => {
+    if (!claimsModalDocument) {
+      return null;
+    }
+    const claimList = claimsByDocument[claimsModalDocument.id] ?? [];
+    const isLoadingClaims = claimsLoadingId === claimsModalDocument.id || claimsExtractingId === claimsModalDocument.id;
+
+    return (
+      <div className="modal-overlay">
+        <div className="modal-card" style={{ maxWidth: "640px" }}>
+          <div className="modal-header">
+            <div>
+              <strong>טענות מזוהות · {claimsModalDocument.originalFilename}</strong>
+              <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                הועלה ב-{new Date(claimsModalDocument.createdAt).toLocaleString("he-IL")}
+              </div>
+            </div>
+            <button type="button" className="modal-close" onClick={() => setClaimsModalDocument(null)}>
+              ✕
+            </button>
+          </div>
+          <div className="modal-body" style={{ maxHeight: "70vh", overflowY: "auto" }}>
+            {isLoadingClaims ? (
+              <p style={{ fontSize: "13px" }}>טוען טענות מהמסמך...</p>
+            ) : claimList.length === 0 ? (
+              <p style={{ fontSize: "13px", color: "#555" }}>
+                לא נמצאו טענות שמורות למסמך זה. נסה לבצע חילוץ טענות.
+              </p>
+            ) : (
+              <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "12px" }}>
+                {claimList.map((claim) => (
+                  <li
+                    key={claim.id}
+                    style={{
+                      border: "1px solid #d1fae5",
+                      borderRadius: "6px",
+                      padding: "10px",
+                      background: "#ecfdf5",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
+                      <div>
+                        <strong style={{ fontSize: "14px" }}>{claim.claimTitle}</strong>
+                        <div style={{ fontSize: "12px", color: "#047857" }}>{claim.category}</div>
+                      </div>
+                      {typeof claim.confidence === "number" && (
+                        <span style={{ fontSize: "12px", color: "#0f766e" }}>
+                          אמינות: {(claim.confidence * 100).toFixed(0)}%
+                        </span>
+                      )}
+                    </div>
+                    <p style={{ fontSize: "13px", margin: "8px 0" }}>{claim.claimSummary}</p>
+                    {claim.sourceExcerpt && (
+                      <p style={{ fontSize: "12px", color: "#6b7280" }}>
+                        <strong>ציטוט:</strong> {claim.sourceExcerpt}
+                      </p>
+                    )}
+                    {claim.recommendation && (
+                      <p style={{ fontSize: "12px", color: "#0f172a" }}>
+                        <strong>המלצה:</strong> {claim.recommendation}
+                      </p>
+                    )}
+                    {claim.tags.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "6px" }}>
+                        {claim.tags.map((tag) => (
+                          <span
+                            key={`${claim.id}-${tag}`}
+                            style={{
+                              fontSize: "11px",
+                              background: "white",
+                              border: "1px solid #a7f3d0",
+                              borderRadius: "999px",
+                              padding: "2px 8px",
+                            }}
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderTimelinePanel = () => {
     if (!selectedCase) {
       return null;
@@ -1856,6 +2101,7 @@ function App() {
         ) : null}
       </div>
       {renderDocumentModal()}
+      {renderClaimsModal()}
     </div>
   );
 }
