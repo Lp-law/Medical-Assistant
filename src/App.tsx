@@ -878,7 +878,7 @@ function App() {
       return;
     }
 
-    const fileName = `${sanitizeFileName(baseName)}.docx`;
+    const fileName = `${sanitizeFileName(baseName)}.doc`;
     const html = buildWordHtml(text);
     const blob = new Blob(["\ufeff", html], { type: "application/msword" });
     const url = URL.createObjectURL(blob);
