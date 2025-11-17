@@ -1300,7 +1300,41 @@ function App() {
               </div>
             </>
           ) : (
-            <p style={{ fontSize: "13px", color: "#555" }}>עדיין לא נוצר דו&quot;ח ראשוני לתיק זה.</p>
+            <>
+              <p style={{ fontSize: "13px", color: "#555" }}>עדיין לא נוצר דו&quot;ח ראשוני לתיק זה.</p>
+              <div style={{ marginTop: "8px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  disabled
+                  title="העתקה תתאפשר לאחר יצירת הדו&quot;ח"
+                  style={{
+                    border: "1px solid #f9a8d4",
+                    borderRadius: "4px",
+                    padding: "6px 10px",
+                    background: "#fff7fb",
+                    color: "#f472b6",
+                    cursor: "not-allowed",
+                  }}
+                >
+                  העתק דו&quot;ח ללוח
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  title="ייצוא לקובץ Word זמין לאחר יצירת הדו&quot;ח"
+                  style={{
+                    border: "1px solid #f9a8d4",
+                    borderRadius: "4px",
+                    padding: "6px 10px",
+                    background: "#fff7fb",
+                    color: "#f472b6",
+                    cursor: "not-allowed",
+                  }}
+                >
+                  יצוא לקובץ Word
+                </button>
+              </div>
+            </>
           )}
         </div>
 
@@ -1413,7 +1447,41 @@ function App() {
               </div>
             </>
           ) : (
-            <p style={{ fontSize: "13px", color: "#555" }}>טרם נוצר דו&quot;ח השוואתי.</p>
+            <>
+              <p style={{ fontSize: "13px", color: "#555" }}>טרם נוצר דו&quot;ח השוואתי.</p>
+              <div style={{ marginTop: "8px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  disabled
+                  title="העתקה תתאפשר לאחר יצירת הדו&quot;ח"
+                  style={{
+                    border: "1px solid #c7d2fe",
+                    borderRadius: "4px",
+                    padding: "6px 10px",
+                    background: "#eef2ff",
+                    color: "#818cf8",
+                    cursor: "not-allowed",
+                  }}
+                >
+                  העתק דו&quot;ח ללוח
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  title="ייצוא לקובץ Word זמין לאחר יצירת הדו&quot;ח"
+                  style={{
+                    border: "1px solid #c7d2fe",
+                    borderRadius: "4px",
+                    padding: "6px 10px",
+                    background: "#eef2ff",
+                    color: "#818cf8",
+                    cursor: "not-allowed",
+                  }}
+                >
+                  יצוא לקובץ Word
+                </button>
+              </div>
+            </>
           )}
         </div>
 
