@@ -17,6 +17,25 @@ const MAX_UPLOAD_SIZE_MB =
     ? configuredMaxUploadSizeMb
     : DEFAULT_MAX_UPLOAD_SIZE_MB;
 
+const sanitizeFileName = (value: string) => {
+  const fallback = "medical_report";
+  if (!value) {
+    return fallback;
+  }
+  return value.trim().replace(/[/\\?%*:|"<>]/g, "").replace(/\s+/g, "_") || fallback;
+};
+
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+const buildWordHtml = (content: string) => {
+  const escaped = escapeHtml(content);
+  return `<!DOCTYPE html><html><head><meta charset="utf-8" /></head><body><pre style="font-family:'Segoe UI', sans-serif; white-space: pre-wrap;">${escaped}</pre></body></html>`;
+};
+
 interface User {
   username: string;
   role: string;
@@ -854,6 +873,24 @@ function App() {
     void copyToClipboard(text, label);
   };
 
+  const handleExportReportToWord = useCallback((text: string | null, baseName: string) => {
+    if (!text) {
+      return;
+    }
+
+    const fileName = `${sanitizeFileName(baseName)}.docx`;
+    const html = buildWordHtml(text);
+    const blob = new Blob(["\ufeff", html], { type: "application/msword" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  }, []);
+
   const renderCaseSidebar = () => (
     <div className="sidebar-stack">
       <div className="panel-card">
@@ -1226,21 +1263,41 @@ function App() {
               >
                 {renderTextWithLinks(selectedCase.initialReport)}
               </div>
-              <button
-                type="button"
-                onClick={() => handleCopyReport(selectedCase.initialReport, "הדו\"ח הראשוני")}
-                style={{
-                  marginTop: "8px",
-                  border: "1px solid #ec4899",
-                  borderRadius: "4px",
-                  padding: "6px 10px",
-                  background: "white",
-                  color: "#ec4899",
-                  cursor: "pointer",
-                }}
-              >
-                העתק דו&quot;ח ללוח
-              </button>
+              <div style={{ marginTop: "8px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => handleCopyReport(selectedCase.initialReport, "הדו\"ח הראשוני")}
+                  style={{
+                    border: "1px solid #ec4899",
+                    borderRadius: "4px",
+                    padding: "6px 10px",
+                    background: "white",
+                    color: "#ec4899",
+                    cursor: "pointer",
+                  }}
+                >
+                  העתק דו&quot;ח ללוח
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleExportReportToWord(
+                      selectedCase.initialReport,
+                      `initial-report-${selectedCase.name ?? selectedCase.id}`
+                    )
+                  }
+                  style={{
+                    border: "1px solid #ec4899",
+                    borderRadius: "4px",
+                    padding: "6px 10px",
+                    background: "#ec4899",
+                    color: "white",
+                    cursor: "pointer",
+                  }}
+                >
+                  יצוא לקובץ Word
+                </button>
+              </div>
             </>
           ) : (
             <p style={{ fontSize: "13px", color: "#555" }}>עדיין לא נוצר דו&quot;ח ראשוני לתיק זה.</p>
@@ -1319,21 +1376,41 @@ function App() {
               >
                 {renderTextWithLinks(selectedCase.comparisonReport)}
               </div>
-              <button
-                type="button"
-                onClick={() => handleCopyReport(selectedCase.comparisonReport, "דו\"ח ההשוואה")}
-                style={{
-                  marginTop: "8px",
-                  border: "1px solid #4f46e5",
-                  borderRadius: "4px",
-                  padding: "6px 10px",
-                  background: "white",
-                  color: "#4f46e5",
-                  cursor: "pointer",
-                }}
-              >
-                העתק דו&quot;ח ללוח
-              </button>
+              <div style={{ marginTop: "8px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => handleCopyReport(selectedCase.comparisonReport, "דו\"ח ההשוואה")}
+                  style={{
+                    border: "1px solid #4f46e5",
+                    borderRadius: "4px",
+                    padding: "6px 10px",
+                    background: "white",
+                    color: "#4f46e5",
+                    cursor: "pointer",
+                  }}
+                >
+                  העתק דו&quot;ח ללוח
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleExportReportToWord(
+                      selectedCase.comparisonReport,
+                      `comparison-report-${selectedCase.name ?? selectedCase.id}`
+                    )
+                  }
+                  style={{
+                    border: "1px solid #4f46e5",
+                    borderRadius: "4px",
+                    padding: "6px 10px",
+                    background: "#4f46e5",
+                    color: "white",
+                    cursor: "pointer",
+                  }}
+                >
+                  יצוא לקובץ Word
+                </button>
+              </div>
             </>
           ) : (
             <p style={{ fontSize: "13px", color: "#555" }}>טרם נוצר דו&quot;ח השוואתי.</p>
