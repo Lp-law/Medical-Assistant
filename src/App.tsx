@@ -1,4 +1,5 @@
-import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 
 const PROD_API_BASE_URL = "https://legal-assistant-backend-1.onrender.com";
 const LOCAL_API_BASE_URL = "http://localhost:3001";
@@ -6,6 +7,15 @@ const LOCAL_API_BASE_URL = "http://localhost:3001";
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ??
   (import.meta.env.DEV ? LOCAL_API_BASE_URL : PROD_API_BASE_URL);
+
+const DEFAULT_MAX_UPLOAD_SIZE_MB = 25;
+const configuredMaxUploadSizeMb = Number(
+  import.meta.env.VITE_MAX_UPLOAD_SIZE_MB ?? `${DEFAULT_MAX_UPLOAD_SIZE_MB}`
+);
+const MAX_UPLOAD_SIZE_MB =
+  Number.isFinite(configuredMaxUploadSizeMb) && configuredMaxUploadSizeMb > 0
+    ? configuredMaxUploadSizeMb
+    : DEFAULT_MAX_UPLOAD_SIZE_MB;
 
 interface User {
   username: string;
@@ -261,15 +271,6 @@ function App() {
       setActiveTab("cases");
     }
   }, [user, token]);
-
-  const handleLogout = () => {
-    setUser(null);
-    setToken(null);
-    setActiveTab("login");
-    setSelectedCaseId(null);
-    setCases([]);
-    setDocuments([]);
-  };
 
   const selectedCase = useMemo(
     () => (selectedCaseId ? cases.find((c) => c.id === selectedCaseId) ?? null : null),
@@ -1059,7 +1060,7 @@ function App() {
       <div className="panel-card">
         <h3 style={{ marginTop: 0, marginBottom: "8px" }}>מסמכים רפואיים / משפטיים</h3>
         <p style={{ fontSize: "12px", color: "#555" }}>
-          ניתן להעלות קבצי PDF או DOCX (עד 10MB לקובץ). הטקסט מופק ונשמר במסד הנתונים.
+          ניתן להעלות קבצי PDF או DOCX (עד {MAX_UPLOAD_SIZE_MB}MB לקובץ). הטקסט מופק ונשמר במסד הנתונים.
         </p>
         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
           <input
@@ -1173,6 +1174,7 @@ function App() {
               </tbody>
             </table>
           )}
+        </div>
       </div>
     );
   };
