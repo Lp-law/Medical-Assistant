@@ -257,27 +257,21 @@ const renderBlocksToHtml = (blocks: ReportBlock[]) => {
         case "divider":
           return `<hr class="report-divider" />`;
         case "table":
-          return `<div class="report-table">
-            ${block.rows
-              .map(
-                (row) => `
-                <div class="report-table-card">
-                  ${row
-                    .map(
-                      (cell, cellIndex) => `
-                      <div class="report-table-field">
-                        <div class="report-table-label">${escapeHtml(
-                          block.headers[cellIndex] ?? `שדה ${cellIndex + 1}`
-                        )}</div>
-                        <div class="report-table-value">${renderMultiline(cell || "—")}</div>
-                      </div>
-                    `
-                    )
-                    .join("")}
-                </div>
-              `
-              )
-              .join("")}
+          return `<div class="report-table-list">
+            <ul>
+              ${block.rows
+                .map((row, rowIndex) => {
+                  const fields = row
+                    .map((cell, cellIndex) => {
+                      const label = escapeHtml(block.headers[cellIndex] ?? `שדה ${cellIndex + 1}`);
+                      const value = renderMultiline(cell || "—");
+                      return `<div class="report-table-list-field"><span class="report-table-list-label">${label}:</span> <span class="report-table-list-value">${value}</span></div>`;
+                    })
+                    .join("");
+                  return `<li><div class="report-table-list-index">${rowIndex + 1}.</div><div class="report-table-list-body">${fields}</div></li>`;
+                })
+                .join("")}
+            </ul>
           </div>`;
         default:
           return "";
@@ -398,48 +392,55 @@ const buildWordHtml = (content: string) => {
       margin: 2em 0;
     }
 
-    .report-table {
-      display: flex;
-      flex-direction: column;
-      gap: 18px;
-      margin: 1.4em 0;
+    .report-table-list {
+      margin: 1.6em 0;
     }
 
-    .report-table-card {
-      border: 1px solid #e2e8f0;
-      border-radius: 14px;
-      background: linear-gradient(135deg, #f8fafc 0%, #ffffff 60%);
+    .report-table-list ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .report-table-list li {
+      display: flex;
+      gap: 12px;
+      background: #ffffff;
+      border: 1px solid #dbeafe;
+      border-radius: 16px;
       padding: 18px;
-      box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.04);
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
     }
 
-    .report-table-field {
+    .report-table-list-index {
+      font-weight: 700;
+      color: #0f172a;
+      font-size: 16px;
+      margin-top: 4px;
+    }
+
+    .report-table-list-body {
+      flex: 1;
       display: flex;
       flex-direction: column;
-      margin-bottom: 10px;
-      padding-bottom: 10px;
-      border-bottom: 1px dashed rgba(15, 23, 42, 0.12);
+      gap: 6px;
     }
 
-    .report-table-field:last-child {
-      margin-bottom: 0;
-      padding-bottom: 0;
-      border-bottom: none;
-    }
-
-    .report-table-label {
-      font-size: 12px;
-      font-weight: 600;
-      letter-spacing: 0.05em;
-      color: #0f172a;
-      text-transform: uppercase;
-      opacity: 0.7;
-    }
-
-    .report-table-value {
+    .report-table-list-field {
       font-size: 14px;
       line-height: 1.7;
-      margin-top: 4px;
+      color: #0f172a;
+    }
+
+    .report-table-list-label {
+      font-weight: 600;
+      color: #0f172a;
+    }
+
+    .report-table-list-value {
       color: #111827;
     }
   `;
