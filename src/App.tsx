@@ -182,93 +182,6 @@ const parseAsciiTableSegment = (segment: string): { headers: string[]; rows: str
   return { headers, rows };
 };
 
-const lineLooksLikeAsciiTable = (line: string) => {
-  if (!line || !line.includes("|")) {
-    return false;
-  }
-  const parts = line.split("|");
-  if (parts.length < 2) {
-    return false;
-  }
-  const meaningfulSegments = parts.filter((part) => part.trim().length > 0);
-  if (meaningfulSegments.length === 0) {
-    return false;
-  }
-  return true;
-};
-
-const extractAsciiTablePlaceholders = (
-  content: string
-): { cleanedContent: string; placeholders: Array<{ key: string; headers: string[]; rows: string[][] }> } => {
-  const placeholders: Array<{ key: string; headers: string[]; rows: string[][] }> = [];
-  const lines = content.split(/\r?\n/);
-  const outputLines: string[] = [];
-  let buffer: string[] = [];
-
-  const flushBuffer = () => {
-    if (buffer.length >= 2) {
-      const segment = buffer.join("\n");
-      const parsed = parseAsciiTableSegment(segment);
-      if (parsed) {
-        const key = `[[REPORT_TABLE_${placeholders.length}]]`;
-        placeholders.push({ key, headers: parsed.headers, rows: parsed.rows });
-        outputLines.push(key);
-        buffer = [];
-        return;
-      }
-    }
-    outputLines.push(...buffer);
-    buffer = [];
-  };
-
-  for (const line of lines) {
-    if (lineLooksLikeAsciiTable(line)) {
-      buffer.push(line);
-    } else {
-      if (buffer.length > 0) {
-        flushBuffer();
-      }
-      outputLines.push(line);
-    }
-  }
-
-  if (buffer.length > 0) {
-    flushBuffer();
-  }
-
-  return { cleanedContent: outputLines.join("\n"), placeholders };
-};
-
-const hydrateTablePlaceholders = (
-  blocks: ReportBlock[],
-  placeholders: Array<{ key: string; headers: string[]; rows: string[][] }>
-): ReportBlock[] => {
-  if (placeholders.length === 0) {
-    return blocks;
-  }
-
-  const tableMap = new Map(placeholders.map((entry) => [entry.key, entry]));
-  const hydrated: ReportBlock[] = [];
-
-  for (const block of blocks) {
-    if (block.kind === "paragraph") {
-      const trimmed = block.text.trim();
-      const placeholder = tableMap.get(trimmed);
-      if (placeholder && trimmed === placeholder.key) {
-        hydrated.push({
-          kind: "table",
-          headers: placeholder.headers,
-          rows: placeholder.rows,
-        });
-        continue;
-      }
-    }
-    hydrated.push(block);
-  }
-
-  return hydrated;
-};
-
 const renderMultiline = (value: string) => escapeHtml(value).replace(/\n/g, "<br />");
 
 const renderTableListMarkup = (headers: string[], rows: string[][], startIndex = 1) => {
@@ -340,9 +253,7 @@ const renderBlocksToHtml = (blocks: ReportBlock[]) => {
 };
 
 const buildWordHtml = (content: string) => {
-  const { cleanedContent, placeholders } = extractAsciiTablePlaceholders(content);
-  const baseBlocks = convertReportTextToBlocks(cleanedContent);
-  const blocks = hydrateTablePlaceholders(baseBlocks, placeholders);
+  const blocks = convertReportTextToBlocks(content);
   const bodyContent = renderBlocksToHtml(blocks);
 
   const styles = `
