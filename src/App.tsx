@@ -38,7 +38,8 @@ type ReportBlock =
   | { kind: "paragraph"; text: string }
   | { kind: "list"; listType: "ul" | "ol"; items: string[] }
   | { kind: "quote"; text: string }
-  | { kind: "divider" };
+  | { kind: "divider" }
+  | { kind: "table"; headers: string[]; rows: string[][] };
 
 const convertReportTextToBlocks = (content: string): ReportBlock[] => {
   if (!content) {
@@ -49,6 +50,14 @@ const convertReportTextToBlocks = (content: string): ReportBlock[] => {
   const blocks: ReportBlock[] = [];
   let paragraphBuffer: string[] = [];
   let activeList: { listType: "ul" | "ol"; items: string[] } | null = null;
+  let tableBuilder:
+    | {
+        headers: string[] | null;
+        rows: string[][];
+        lastRowIndex: number;
+        lastColIndex: number;
+      }
+    | null = null;
 
   const flushParagraph = () => {
     if (paragraphBuffer.length > 0) {
@@ -67,13 +76,117 @@ const convertReportTextToBlocks = (content: string): ReportBlock[] => {
     activeList = null;
   };
 
+  const flushTable = () => {
+    if (!tableBuilder) {
+      return;
+    }
+
+    if (tableBuilder.rows.length > 0) {
+      const normalizedHeaders = (
+        tableBuilder.headers ??
+        tableBuilder.rows[0].map((_, index) => `עמודה ${index + 1}`)
+      ).map((header, index) => header || `שדה ${index + 1}`);
+
+      const normalizedRows = tableBuilder.rows.map((row) => {
+        if (row.length < normalizedHeaders.length) {
+          return [...row, ...Array(normalizedHeaders.length - row.length).fill("")];
+        }
+        return row;
+      });
+
+      blocks.push({
+        kind: "table",
+        headers: normalizedHeaders,
+        rows: normalizedRows,
+      });
+    }
+
+    tableBuilder = null;
+  };
+
+  const isTableLine = (line: string) => {
+    const trimmed = line.trimEnd();
+    if (!trimmed.includes("|")) {
+      return false;
+    }
+    const pipeCount = (trimmed.match(/\|/g) ?? []).length;
+    return pipeCount >= 2 && /^\s*[\-|>\s|=_.א-תA-Za-z0-9]/.test(trimmed);
+  };
+
+  const extractTableCells = (line: string) =>
+    line
+      .trim()
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
+      .split("|")
+      .map((cell) => cell.trim());
+
+  const isDividerRow = (cells: string[]) =>
+    cells.length > 0 && cells.every((cell) => /^[-–—_=]+$/.test(cell));
+
   for (const rawLine of lines) {
     const line = rawLine.replace(/\t/g, "    ");
     const trimmed = line.trim();
+    const lineIsTable = isTableLine(line);
+
+    if (!lineIsTable && tableBuilder) {
+      if (!trimmed) {
+        flushTable();
+        continue;
+      }
+
+      if (tableBuilder.lastRowIndex >= 0 && tableBuilder.lastColIndex >= 0) {
+        const currentRow = tableBuilder.rows[tableBuilder.lastRowIndex];
+        if (currentRow && typeof currentRow[tableBuilder.lastColIndex] === "string") {
+          currentRow[tableBuilder.lastColIndex] = `${currentRow[tableBuilder.lastColIndex]} ${trimmed}`.trim();
+          continue;
+        }
+      }
+    }
 
     if (!trimmed) {
       flushParagraph();
       flushList();
+      flushTable();
+      continue;
+    }
+
+    if (lineIsTable) {
+      flushParagraph();
+      flushList();
+
+      const cells = extractTableCells(line);
+      if (cells.length === 0 || isDividerRow(cells)) {
+        continue;
+      }
+
+      if (!tableBuilder) {
+        tableBuilder = {
+          headers: null,
+          rows: [],
+          lastRowIndex: -1,
+          lastColIndex: -1,
+        };
+      }
+
+      if (!tableBuilder.headers) {
+        tableBuilder.headers = [...cells];
+      } else {
+        const headers = tableBuilder.headers;
+        const row = [...cells];
+        if (headers) {
+          while (headers.length < row.length) {
+            headers.push(`שדה ${headers.length + 1}`);
+          }
+          while (row.length < headers.length) {
+            row.push("");
+          }
+        }
+        tableBuilder.rows.push(row);
+        tableBuilder.lastRowIndex = tableBuilder.rows.length - 1;
+        tableBuilder.lastColIndex = headers ? headers.length - 1 : row.length - 1;
+      }
+
       continue;
     }
 
@@ -81,6 +194,7 @@ const convertReportTextToBlocks = (content: string): ReportBlock[] => {
     if (headingMatch) {
       flushParagraph();
       flushList();
+      flushTable();
       const level = Math.min(6, headingMatch[1].length);
       blocks.push({ kind: "heading", level, text: headingMatch[2].trim() });
       continue;
@@ -89,6 +203,7 @@ const convertReportTextToBlocks = (content: string): ReportBlock[] => {
     if (/^(-{3,}|_{3,}|\*{3,})$/.test(trimmed)) {
       flushParagraph();
       flushList();
+      flushTable();
       blocks.push({ kind: "divider" });
       continue;
     }
@@ -96,6 +211,7 @@ const convertReportTextToBlocks = (content: string): ReportBlock[] => {
     if (trimmed.startsWith(">")) {
       flushParagraph();
       flushList();
+      flushTable();
       blocks.push({ kind: "quote", text: trimmed.replace(/^>\s?/, "") });
       continue;
     }
@@ -127,6 +243,7 @@ const convertReportTextToBlocks = (content: string): ReportBlock[] => {
 
   flushParagraph();
   flushList();
+  flushTable();
 
   if (blocks.length === 0 && content.trim()) {
     return [{ kind: "paragraph", text: content.trim() }];
@@ -160,6 +277,29 @@ const renderBlocksToHtml = (blocks: ReportBlock[]) => {
           return `<blockquote class="report-quote">${renderMultiline(block.text)}</blockquote>`;
         case "divider":
           return `<hr class="report-divider" />`;
+        case "table":
+          return `<div class="report-table">
+            ${block.rows
+              .map(
+                (row) => `
+                <div class="report-table-card">
+                  ${row
+                    .map(
+                      (cell, cellIndex) => `
+                      <div class="report-table-field">
+                        <div class="report-table-label">${escapeHtml(
+                          block.headers[cellIndex] ?? `שדה ${cellIndex + 1}`
+                        )}</div>
+                        <div class="report-table-value">${renderMultiline(cell || "—")}</div>
+                      </div>
+                    `
+                    )
+                    .join("")}
+                </div>
+              `
+              )
+              .join("")}
+          </div>`;
         default:
           return "";
       }
@@ -275,6 +415,51 @@ const buildWordHtml = (content: string) => {
       border: none;
       border-top: 2px dashed #cbd5f5;
       margin: 2em 0;
+    }
+
+    .report-table {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      margin: 1.4em 0;
+    }
+
+    .report-table-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #f8fafc 0%, #ffffff 60%);
+      padding: 18px;
+      box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.04);
+    }
+
+    .report-table-field {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px dashed rgba(15, 23, 42, 0.12);
+    }
+
+    .report-table-field:last-child {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+
+    .report-table-label {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      color: #0f172a;
+      text-transform: uppercase;
+      opacity: 0.7;
+    }
+
+    .report-table-value {
+      font-size: 14px;
+      line-height: 1.7;
+      margin-top: 4px;
+      color: #111827;
     }
   `;
 
