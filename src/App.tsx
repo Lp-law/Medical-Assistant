@@ -233,6 +233,37 @@ const hydrateTablePlaceholders = (
 
 const renderMultiline = (value: string) => escapeHtml(value).replace(/\n/g, "<br />");
 
+const renderTableListMarkup = (headers: string[], rows: string[][], startIndex = 1) => {
+  if (rows.length === 0) {
+    return "";
+  }
+
+  return `<div class="report-table-list">
+    <ul>
+      ${rows
+        .map((row, rowIndex) => {
+          const fields = row
+            .map((cell, cellIndex) => {
+              const label = escapeHtml(headers[cellIndex] ?? `שדה ${cellIndex + 1}`);
+              const value = renderMultiline(cell || "—");
+              return `<div class="report-table-list-field"><span class="report-table-list-label">${label}:</span> <span class="report-table-list-value">${value}</span></div>`;
+            })
+            .join("");
+          return `<li><div class="report-table-list-index">${startIndex + rowIndex}.</div><div class="report-table-list-body">${fields}</div></li>`;
+        })
+        .join("")}
+    </ul>
+  </div>`;
+};
+
+const tryRenderAsciiTableParagraph = (text: string): string | null => {
+  const parsed = parseAsciiTableSegment(text);
+  if (!parsed) {
+    return null;
+  }
+  return renderTableListMarkup(parsed.headers, parsed.rows);
+};
+
 const renderBlocksToHtml = (blocks: ReportBlock[]) => {
   if (blocks.length === 0) {
     return "<p class=\"report-paragraph\">עדיין לא נוצר תוכן לדו\"ח זה.</p>";
@@ -245,8 +276,13 @@ const renderBlocksToHtml = (blocks: ReportBlock[]) => {
           return `<h${block.level} class="report-heading report-heading-${block.level}">${renderMultiline(
             block.text
           )}</h${block.level}>`;
-        case "paragraph":
+        case "paragraph": {
+          const fallbackTable = tryRenderAsciiTableParagraph(block.text);
+          if (fallbackTable) {
+            return fallbackTable;
+          }
           return `<p class="report-paragraph">${renderMultiline(block.text)}</p>`;
+        }
         case "list": {
           const tag = block.listType === "ol" ? "ol" : "ul";
           const items = block.items.map((item) => `<li>${renderMultiline(item)}</li>`).join("");
@@ -257,22 +293,7 @@ const renderBlocksToHtml = (blocks: ReportBlock[]) => {
         case "divider":
           return `<hr class="report-divider" />`;
         case "table":
-          return `<div class="report-table-list">
-            <ul>
-              ${block.rows
-                .map((row, rowIndex) => {
-                  const fields = row
-                    .map((cell, cellIndex) => {
-                      const label = escapeHtml(block.headers[cellIndex] ?? `שדה ${cellIndex + 1}`);
-                      const value = renderMultiline(cell || "—");
-                      return `<div class="report-table-list-field"><span class="report-table-list-label">${label}:</span> <span class="report-table-list-value">${value}</span></div>`;
-                    })
-                    .join("");
-                  return `<li><div class="report-table-list-index">${rowIndex + 1}.</div><div class="report-table-list-body">${fields}</div></li>`;
-                })
-                .join("")}
-            </ul>
-          </div>`;
+          return renderTableListMarkup(block.headers, block.rows);
         default:
           return "";
       }
