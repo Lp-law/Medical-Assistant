@@ -136,9 +136,7 @@ const convertReportTextToBlocks = (content: string): ReportBlock[] => {
   return blocks;
 };
 
-const ASCII_TABLE_REGEX = /((?:^\s*\|.*\|\s*(?:\r?\n|$)){2,})/gm;
 const TABLE_DIVIDER_REGEX = /^\|?\s*[-–—_=]+\s*(\|\s*[-–—_=]+\s*)+\|?\s*$/;
-
 const splitTableCells = (line: string) =>
   line
     .trim()
@@ -184,21 +182,61 @@ const parseAsciiTableSegment = (segment: string): { headers: string[]; rows: str
   return { headers, rows };
 };
 
+const lineLooksLikeAsciiTable = (line: string) => {
+  if (!line || !line.includes("|")) {
+    return false;
+  }
+  const parts = line.split("|");
+  if (parts.length < 2) {
+    return false;
+  }
+  const meaningfulSegments = parts.filter((part) => part.trim().length > 0);
+  if (meaningfulSegments.length === 0) {
+    return false;
+  }
+  return true;
+};
+
 const extractAsciiTablePlaceholders = (
   content: string
 ): { cleanedContent: string; placeholders: Array<{ key: string; headers: string[]; rows: string[][] }> } => {
   const placeholders: Array<{ key: string; headers: string[]; rows: string[][] }> = [];
-  const cleanedContent = content.replace(ASCII_TABLE_REGEX, (segment) => {
-    const parsed = parseAsciiTableSegment(segment);
-    if (!parsed) {
-      return segment;
-    }
-    const key = `[[REPORT_TABLE_${placeholders.length}]]`;
-    placeholders.push({ key, headers: parsed.headers, rows: parsed.rows });
-    return `\n${key}\n`;
-  });
+  const lines = content.split(/\r?\n/);
+  const outputLines: string[] = [];
+  let buffer: string[] = [];
 
-  return { cleanedContent, placeholders };
+  const flushBuffer = () => {
+    if (buffer.length >= 2) {
+      const segment = buffer.join("\n");
+      const parsed = parseAsciiTableSegment(segment);
+      if (parsed) {
+        const key = `[[REPORT_TABLE_${placeholders.length}]]`;
+        placeholders.push({ key, headers: parsed.headers, rows: parsed.rows });
+        outputLines.push(key);
+        buffer = [];
+        return;
+      }
+    }
+    outputLines.push(...buffer);
+    buffer = [];
+  };
+
+  for (const line of lines) {
+    if (lineLooksLikeAsciiTable(line)) {
+      buffer.push(line);
+    } else {
+      if (buffer.length > 0) {
+        flushBuffer();
+      }
+      outputLines.push(line);
+    }
+  }
+
+  if (buffer.length > 0) {
+    flushBuffer();
+  }
+
+  return { cleanedContent: outputLines.join("\n"), placeholders };
 };
 
 const hydrateTablePlaceholders = (
