@@ -29,11 +29,274 @@ const escapeHtml = (value: string) =>
   value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+type ReportBlock =
+  | { kind: "heading"; level: number; text: string }
+  | { kind: "paragraph"; text: string }
+  | { kind: "list"; listType: "ul" | "ol"; items: string[] }
+  | { kind: "quote"; text: string }
+  | { kind: "divider" };
+
+const convertReportTextToBlocks = (content: string): ReportBlock[] => {
+  if (!content) {
+    return [];
+  }
+
+  const lines = content.split(/\r?\n/);
+  const blocks: ReportBlock[] = [];
+  let paragraphBuffer: string[] = [];
+  let activeList: { listType: "ul" | "ol"; items: string[] } | null = null;
+
+  const flushParagraph = () => {
+    if (paragraphBuffer.length > 0) {
+      const paragraphText = paragraphBuffer.join("\n").trim();
+      if (paragraphText) {
+        blocks.push({ kind: "paragraph", text: paragraphText });
+      }
+      paragraphBuffer = [];
+    }
+  };
+
+  const flushList = () => {
+    if (activeList && activeList.items.length > 0) {
+      blocks.push({ kind: "list", listType: activeList.listType, items: activeList.items });
+    }
+    activeList = null;
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\t/g, "    ");
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      flushParagraph();
+      flushList();
+      const level = Math.min(6, headingMatch[1].length);
+      blocks.push({ kind: "heading", level, text: headingMatch[2].trim() });
+      continue;
+    }
+
+    if (/^(-{3,}|_{3,}|\*{3,})$/.test(trimmed)) {
+      flushParagraph();
+      flushList();
+      blocks.push({ kind: "divider" });
+      continue;
+    }
+
+    if (trimmed.startsWith(">")) {
+      flushParagraph();
+      flushList();
+      blocks.push({ kind: "quote", text: trimmed.replace(/^>\s?/, "") });
+      continue;
+    }
+
+    const bulletMatch = trimmed.match(/^[-*]\s+(.+)$/);
+    if (bulletMatch) {
+      flushParagraph();
+      if (!activeList || activeList.listType !== "ul") {
+        flushList();
+        activeList = { listType: "ul", items: [] };
+      }
+      activeList.items.push(bulletMatch[1].trim());
+      continue;
+    }
+
+    const numberedMatch = trimmed.match(/^\d+[\.\)]\s+(.+)$/);
+    if (numberedMatch) {
+      flushParagraph();
+      if (!activeList || activeList.listType !== "ol") {
+        flushList();
+        activeList = { listType: "ol", items: [] };
+      }
+      activeList.items.push(numberedMatch[1].trim());
+      continue;
+    }
+
+    paragraphBuffer.push(line.trimEnd());
+  }
+
+  flushParagraph();
+  flushList();
+
+  if (blocks.length === 0 && content.trim()) {
+    return [{ kind: "paragraph", text: content.trim() }];
+  }
+
+  return blocks;
+};
+
+const renderMultiline = (value: string) => escapeHtml(value).replace(/\n/g, "<br />");
+
+const renderBlocksToHtml = (blocks: ReportBlock[]) => {
+  if (blocks.length === 0) {
+    return "<p class=\"report-paragraph\">עדיין לא נוצר תוכן לדו\"ח זה.</p>";
+  }
+
+  return blocks
+    .map((block) => {
+      switch (block.kind) {
+        case "heading":
+          return `<h${block.level} class="report-heading report-heading-${block.level}">${renderMultiline(
+            block.text
+          )}</h${block.level}>`;
+        case "paragraph":
+          return `<p class="report-paragraph">${renderMultiline(block.text)}</p>`;
+        case "list": {
+          const tag = block.listType === "ol" ? "ol" : "ul";
+          const items = block.items.map((item) => `<li>${renderMultiline(item)}</li>`).join("");
+          return `<${tag} class="report-list report-list-${block.listType}">${items}</${tag}>`;
+        }
+        case "quote":
+          return `<blockquote class="report-quote">${renderMultiline(block.text)}</blockquote>`;
+        case "divider":
+          return `<hr class="report-divider" />`;
+        default:
+          return "";
+      }
+    })
+    .join("\n");
+};
 
 const buildWordHtml = (content: string) => {
-  const escaped = escapeHtml(content);
-  return `<!DOCTYPE html><html><head><meta charset="utf-8" /></head><body><pre style="font-family:'Segoe UI', sans-serif; white-space: pre-wrap;">${escaped}</pre></body></html>`;
+  const blocks = convertReportTextToBlocks(content);
+  const bodyContent = renderBlocksToHtml(blocks);
+
+  const styles = `
+    @page {
+      margin: 2.5cm 2cm;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', 'Assistant', 'Alef', sans-serif;
+      background: #f1f5f9;
+      color: #0f172a;
+      direction: rtl;
+    }
+
+    .report-shell {
+      margin: 0;
+      padding: 40px 0;
+    }
+
+    .report-brand {
+      max-width: 960px;
+      margin: 0 auto 16px;
+      text-align: right;
+      color: #475569;
+      font-size: 13px;
+    }
+
+    .report-brand strong {
+      font-size: 16px;
+      letter-spacing: 0.04em;
+    }
+
+    .report-container {
+      max-width: 960px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 48px;
+      box-shadow: 0 30px 80px rgba(15, 23, 42, 0.12);
+      border: 3px solid #e2e8f0;
+    }
+
+    .report-heading {
+      font-weight: 700;
+      margin-top: 1.6em;
+      margin-bottom: 0.6em;
+      color: #0f172a;
+    }
+
+    .report-heading-1 {
+      font-size: 32px;
+      border-bottom: 3px solid #f472b6;
+      padding-bottom: 0.4em;
+      margin-top: 0;
+    }
+
+    .report-heading-2 {
+      font-size: 24px;
+      border-right: 6px solid #c084fc;
+      padding-right: 12px;
+      color: #312e81;
+    }
+
+    .report-heading-3 {
+      font-size: 20px;
+      color: #0f766e;
+    }
+
+    .report-paragraph {
+      font-size: 15px;
+      line-height: 1.8;
+      margin: 0 0 0.9em;
+      color: #0f172a;
+    }
+
+    .report-list {
+      font-size: 15px;
+      line-height: 1.8;
+      padding-inline-start: 1.2em;
+      margin: 0 0 1em;
+    }
+
+    .report-list-ul li {
+      margin-bottom: 0.4em;
+    }
+
+    .report-list-ol {
+      padding-inline-start: 1.4em;
+    }
+
+    .report-quote {
+      margin: 1.4em 0;
+      padding: 1em 1.2em;
+      border-right: 4px solid #38bdf8;
+      background: #f0f9ff;
+      border-radius: 12px;
+      font-size: 15px;
+      color: #0f172a;
+    }
+
+    .report-divider {
+      border: none;
+      border-top: 2px dashed #cbd5f5;
+      margin: 2em 0;
+    }
+  `;
+
+  return `<!DOCTYPE html>
+  <html lang="he" dir="rtl">
+    <head>
+      <meta charset="utf-8" />
+      <title>Medical Legal Report</title>
+      <style>${styles}</style>
+    </head>
+    <body>
+      <div class="report-shell">
+        <div class="report-brand">
+          <strong>Lior Perry · Medical-Legal Intelligence</strong><br />
+          דו\"ח מיועד לעיון פנימי בלבד · סודי וחסוי
+        </div>
+        <div class="report-container">
+          ${bodyContent}
+        </div>
+      </div>
+    </body>
+  </html>`;
 };
 
 interface User {
