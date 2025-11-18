@@ -50,14 +50,6 @@ const convertReportTextToBlocks = (content: string): ReportBlock[] => {
   const blocks: ReportBlock[] = [];
   let paragraphBuffer: string[] = [];
   let activeList: { listType: "ul" | "ol"; items: string[] } | null = null;
-  let tableBuilder:
-    | {
-        headers: string[] | null;
-        rows: string[][];
-        lastRowIndex: number;
-        lastColIndex: number;
-      }
-    | null = null;
 
   const flushParagraph = () => {
     if (paragraphBuffer.length > 0) {
@@ -76,117 +68,13 @@ const convertReportTextToBlocks = (content: string): ReportBlock[] => {
     activeList = null;
   };
 
-  const flushTable = () => {
-    if (!tableBuilder) {
-      return;
-    }
-
-    if (tableBuilder.rows.length > 0) {
-      const normalizedHeaders = (
-        tableBuilder.headers ??
-        tableBuilder.rows[0].map((_, index) => `עמודה ${index + 1}`)
-      ).map((header, index) => header || `שדה ${index + 1}`);
-
-      const normalizedRows = tableBuilder.rows.map((row) => {
-        if (row.length < normalizedHeaders.length) {
-          return [...row, ...Array(normalizedHeaders.length - row.length).fill("")];
-        }
-        return row;
-      });
-
-      blocks.push({
-        kind: "table",
-        headers: normalizedHeaders,
-        rows: normalizedRows,
-      });
-    }
-
-    tableBuilder = null;
-  };
-
-  const isTableLine = (line: string) => {
-    const trimmed = line.trimEnd();
-    if (!trimmed.includes("|")) {
-      return false;
-    }
-    const pipeCount = (trimmed.match(/\|/g) ?? []).length;
-    return pipeCount >= 2 && /^\s*[\-|>\s|=_.א-תA-Za-z0-9]/.test(trimmed);
-  };
-
-  const extractTableCells = (line: string) =>
-    line
-      .trim()
-      .replace(/^\|/, "")
-      .replace(/\|$/, "")
-      .split("|")
-      .map((cell) => cell.trim());
-
-  const isDividerRow = (cells: string[]) =>
-    cells.length > 0 && cells.every((cell) => /^[-–—_=]+$/.test(cell));
-
   for (const rawLine of lines) {
     const line = rawLine.replace(/\t/g, "    ");
     const trimmed = line.trim();
-    const lineIsTable = isTableLine(line);
-
-    if (!lineIsTable && tableBuilder) {
-      if (!trimmed) {
-        flushTable();
-        continue;
-      }
-
-      if (tableBuilder.lastRowIndex >= 0 && tableBuilder.lastColIndex >= 0) {
-        const currentRow = tableBuilder.rows[tableBuilder.lastRowIndex];
-        if (currentRow && typeof currentRow[tableBuilder.lastColIndex] === "string") {
-          currentRow[tableBuilder.lastColIndex] = `${currentRow[tableBuilder.lastColIndex]} ${trimmed}`.trim();
-          continue;
-        }
-      }
-    }
 
     if (!trimmed) {
       flushParagraph();
       flushList();
-      flushTable();
-      continue;
-    }
-
-    if (lineIsTable) {
-      flushParagraph();
-      flushList();
-
-      const cells = extractTableCells(line);
-      if (cells.length === 0 || isDividerRow(cells)) {
-        continue;
-      }
-
-      if (!tableBuilder) {
-        tableBuilder = {
-          headers: null,
-          rows: [],
-          lastRowIndex: -1,
-          lastColIndex: -1,
-        };
-      }
-
-      if (!tableBuilder.headers) {
-        tableBuilder.headers = [...cells];
-      } else {
-        const headers = tableBuilder.headers;
-        const row = [...cells];
-        if (headers) {
-          while (headers.length < row.length) {
-            headers.push(`שדה ${headers.length + 1}`);
-          }
-          while (row.length < headers.length) {
-            row.push("");
-          }
-        }
-        tableBuilder.rows.push(row);
-        tableBuilder.lastRowIndex = tableBuilder.rows.length - 1;
-        tableBuilder.lastColIndex = headers ? headers.length - 1 : row.length - 1;
-      }
-
       continue;
     }
 
@@ -194,7 +82,6 @@ const convertReportTextToBlocks = (content: string): ReportBlock[] => {
     if (headingMatch) {
       flushParagraph();
       flushList();
-      flushTable();
       const level = Math.min(6, headingMatch[1].length);
       blocks.push({ kind: "heading", level, text: headingMatch[2].trim() });
       continue;
@@ -203,7 +90,6 @@ const convertReportTextToBlocks = (content: string): ReportBlock[] => {
     if (/^(-{3,}|_{3,}|\*{3,})$/.test(trimmed)) {
       flushParagraph();
       flushList();
-      flushTable();
       blocks.push({ kind: "divider" });
       continue;
     }
@@ -211,7 +97,6 @@ const convertReportTextToBlocks = (content: string): ReportBlock[] => {
     if (trimmed.startsWith(">")) {
       flushParagraph();
       flushList();
-      flushTable();
       blocks.push({ kind: "quote", text: trimmed.replace(/^>\s?/, "") });
       continue;
     }
@@ -243,13 +128,107 @@ const convertReportTextToBlocks = (content: string): ReportBlock[] => {
 
   flushParagraph();
   flushList();
-  flushTable();
 
   if (blocks.length === 0 && content.trim()) {
     return [{ kind: "paragraph", text: content.trim() }];
   }
 
   return blocks;
+};
+
+const ASCII_TABLE_REGEX = /((?:^\s*\|.*\|\s*(?:\r?\n|$)){2,})/gm;
+const TABLE_DIVIDER_REGEX = /^\|?\s*[-–—_=]+\s*(\|\s*[-–—_=]+\s*)+\|?\s*$/;
+
+const splitTableCells = (line: string) =>
+  line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+
+const parseAsciiTableSegment = (segment: string): { headers: string[]; rows: string[][] } | null => {
+  const lines = segment
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length < 2) {
+    return null;
+  }
+
+  const meaningfulLines = lines.filter((line) => !TABLE_DIVIDER_REGEX.test(line));
+  if (meaningfulLines.length < 2) {
+    return null;
+  }
+
+  const headerCells = splitTableCells(meaningfulLines[0]);
+  const dataRows = meaningfulLines
+    .slice(1)
+    .map((line) => splitTableCells(line))
+    .filter((row) => row.some((cell) => cell.length > 0));
+
+  if (headerCells.length === 0 || dataRows.length === 0) {
+    return null;
+  }
+
+  const columnCount = Math.max(headerCells.length, ...dataRows.map((row) => row.length));
+  const headers = Array.from({ length: columnCount }, (_, index) => headerCells[index] || `שדה ${index + 1}`);
+  const rows = dataRows.map((row) => {
+    if (row.length < columnCount) {
+      return [...row, ...Array(columnCount - row.length).fill("")];
+    }
+    return row.slice(0, columnCount);
+  });
+
+  return { headers, rows };
+};
+
+const extractAsciiTablePlaceholders = (
+  content: string
+): { cleanedContent: string; placeholders: Array<{ key: string; headers: string[]; rows: string[][] }> } => {
+  const placeholders: Array<{ key: string; headers: string[]; rows: string[][] }> = [];
+  const cleanedContent = content.replace(ASCII_TABLE_REGEX, (segment) => {
+    const parsed = parseAsciiTableSegment(segment);
+    if (!parsed) {
+      return segment;
+    }
+    const key = `[[REPORT_TABLE_${placeholders.length}]]`;
+    placeholders.push({ key, headers: parsed.headers, rows: parsed.rows });
+    return `\n${key}\n`;
+  });
+
+  return { cleanedContent, placeholders };
+};
+
+const hydrateTablePlaceholders = (
+  blocks: ReportBlock[],
+  placeholders: Array<{ key: string; headers: string[]; rows: string[][] }>
+): ReportBlock[] => {
+  if (placeholders.length === 0) {
+    return blocks;
+  }
+
+  const tableMap = new Map(placeholders.map((entry) => [entry.key, entry]));
+  const hydrated: ReportBlock[] = [];
+
+  for (const block of blocks) {
+    if (block.kind === "paragraph") {
+      const trimmed = block.text.trim();
+      const placeholder = tableMap.get(trimmed);
+      if (placeholder && trimmed === placeholder.key) {
+        hydrated.push({
+          kind: "table",
+          headers: placeholder.headers,
+          rows: placeholder.rows,
+        });
+        continue;
+      }
+    }
+    hydrated.push(block);
+  }
+
+  return hydrated;
 };
 
 const renderMultiline = (value: string) => escapeHtml(value).replace(/\n/g, "<br />");
@@ -308,7 +287,9 @@ const renderBlocksToHtml = (blocks: ReportBlock[]) => {
 };
 
 const buildWordHtml = (content: string) => {
-  const blocks = convertReportTextToBlocks(content);
+  const { cleanedContent, placeholders } = extractAsciiTablePlaceholders(content);
+  const baseBlocks = convertReportTextToBlocks(cleanedContent);
+  const blocks = hydrateTablePlaceholders(baseBlocks, placeholders);
   const bodyContent = renderBlocksToHtml(blocks);
 
   const styles = `
