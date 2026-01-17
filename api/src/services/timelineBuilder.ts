@@ -11,6 +11,7 @@ export interface KnowledgeClaim {
   type?: string;
   value?: string;
   date?: string;
+  evidenceQuality?: 'high' | 'medium' | 'low';
   source?: KnowledgeClaimSource;
 }
 
@@ -137,7 +138,7 @@ const GROUPING_WINDOW_DAYS = 30;
 const DENSE_WINDOW_DAYS = 30;
 const DENSE_EVENT_THRESHOLD = 4;
 
-const normalizeTimestamp = (value?: string, precision: TimelineDatePrecision): number | undefined => {
+const normalizeTimestamp = (value: string | undefined, precision: TimelineDatePrecision): number | undefined => {
   if (!value) return undefined;
   if (precision === 'day') {
     const date = new Date(value);
@@ -161,7 +162,7 @@ const shouldGroupEvents = (prev: InternalTimelineEvent, current: InternalTimelin
   if (prev.sortTimestamp === undefined || current.sortTimestamp === undefined) {
     return false;
   }
-  const diff = Math.abs(prev.sortTimestamp - current.sortTimestamp);
+  const diff = Math.abs(prev.sortTimestamp! - current.sortTimestamp!);
   if (diff <= GROUPING_WINDOW_DAYS * MS_PER_DAY) {
     return true;
   }
@@ -207,7 +208,7 @@ const attachHiddenReferences = (events: InternalTimelineEvent[]) => {
       if (candidate.sortTimestamp === undefined) {
         return;
       }
-      const diff = Math.abs(candidate.sortTimestamp - event.sortTimestamp);
+      const diff = Math.abs(candidate.sortTimestamp! - event.sortTimestamp!);
       if (diff < bestDiff) {
         best = candidate;
         bestDiff = diff;
@@ -314,7 +315,7 @@ export const buildTimelineFromClaims = (
     if (prev.sortTimestamp === undefined || current.sortTimestamp === undefined) {
       continue;
     }
-    const deltaDays = Math.round((current.sortTimestamp - prev.sortTimestamp) / MS_PER_DAY);
+    const deltaDays = Math.round((current.sortTimestamp! - prev.sortTimestamp!) / MS_PER_DAY);
     if (deltaDays > DAYS_THRESHOLD) {
       const loweredSeverity = hasUndatedBetween(prev, current);
       flags.push({

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { Prisma } from '@prisma/client';
 import { requireAuth } from '../middleware/auth';
 import { prisma } from '../services/prisma';
 import { buildLiteratureQueries } from '../services/literature/queryBuilder';
@@ -170,7 +171,7 @@ router.post('/summarize', async (req, res) => {
       const updated = await prisma.literatureResource.update({
         where: { id: resource.id },
         data: {
-          summaryJson: content,
+          summaryJson: content as unknown as Prisma.InputJsonValue,
           summaryQuality: quality,
           summaryQualityNote: note,
         },

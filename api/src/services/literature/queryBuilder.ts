@@ -84,7 +84,7 @@ const timelinePriority = (type?: string): number => {
 };
 
 export interface QueryBuilderInput {
-  claims: Array<{ type?: string; value?: string; evidenceQuality?: string }>;
+  claims: Array<{ id?: string; type?: string; value?: string; evidenceQuality?: string }>;
   timeline: Array<{ type?: string; description?: string }>;
 }
 
