@@ -1,0 +1,50 @@
+{
+  "name": "lexmedical-api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@azure/ai-form-recognizer": "^5.0.0",
+    "@azure/openai": "^1.0.0-beta.11",
+    "@azure/search-documents": "^12.2.0",
+    "@azure/storage-blob": "^12.16.0",
+    "@napi-rs/canvas": "^0.1.52",
+    "@prisma/client": "^5.19.1",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^8.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^4.2.1",
+    "pdf-lib": "^1.17.1",
+    "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^3.11.174",
+    "prisma": "^5.19.1",
+    "sharp": "^0.33.3",
+    "uuid": "^9.0.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/morgan": "^1.9.7",
+    "@types/multer": "^1.4.11",
+    "@types/node": "^18.19.26",
+    "@types/pdf-parse": "^1.1.4",
+    "@types/supertest": "^2.0.16",
+    "@types/uuid": "^9.0.8",
+    "supertest": "^7.1.1",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.5.4",
+    "vitest": "^1.6.1"
+  }
+}

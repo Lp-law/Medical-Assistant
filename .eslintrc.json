@@ -1,0 +1,39 @@
+{
+  "extends": ["react-app", "react-app/jest"],
+  "rules": {
+    "no-restricted-globals": [
+      "error",
+      {
+        "name": "localStorage",
+        "message": "Do not access localStorage directly. All PHI must stay server-side."
+      },
+      {
+        "name": "sessionStorage",
+        "message": "Do not access sessionStorage directly. All PHI must stay server-side."
+      }
+    ],
+    "no-restricted-properties": [
+      "error",
+      {
+        "object": "window",
+        "property": "localStorage",
+        "message": "Use storageGuard utilities instead of direct localStorage access."
+      },
+      {
+        "object": "window",
+        "property": "sessionStorage",
+        "message": "Use storageGuard utilities instead of direct sessionStorage access."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["src/utils/storageGuard.ts"],
+      "rules": {
+        "no-restricted-globals": "off",
+        "no-restricted-properties": "off"
+      }
+    }
+  ]
+}
+

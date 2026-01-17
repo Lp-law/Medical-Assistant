@@ -1,0 +1,1419 @@
+interface Claim {
+  id?: string;
+  type?: string;
+  value?: string;
+  date?: string;
+}
+
+interface TimelineEvent {
+  id: string;
+  type: string;
+  description: string;
+  date?: string;
+}
+
+type SpecialtyDomain =
+  | 'ORTHO'
+  | 'NEURO'
+  | 'CARDIO'
+  | 'PSYCH'
+  | 'REHAB'
+  | 'DENTAL'
+  | 'ENT'
+  | 'GASTRO'
+  | 'OBGYN'
+  | 'EMERGENCY'
+  | 'ICU'
+  | 'GENERAL_SURGERY'
+  | 'PLASTIC_SURGERY'
+  | 'COSMETIC_INJECTABLES';
+
+export interface SpecialtyFinding {
+  code: string;
+  message: string;
+  severity: 'info' | 'warning' | 'critical';
+  domain: SpecialtyDomain;
+  relatedClaimIds?: string[];
+}
+
+const normalize = (value?: string): string => (value ?? '').toLowerCase();
+
+const hasKeyword = (text: string, keywords: string[]): boolean => keywords.some((keyword) => text.includes(keyword));
+
+const findClaims = (claims: Claim[], keywords: string[]): Claim[] =>
+  claims.filter((claim) => hasKeyword(normalize(`${claim.type ?? ''} ${claim.value ?? ''}`), keywords));
+
+const hasSupportingClaim = (claims: Claim[], keywords: string[]): boolean => !!findClaims(claims, keywords).length;
+
+const hasTimelineEvent = (timeline: TimelineEvent[], keywords: string[]): boolean =>
+  timeline.some((event) => hasKeyword(normalize(event.type), keywords) || hasKeyword(normalize(event.description), keywords));
+
+const collectIds = (items: Claim[]): string[] => items.map((claim) => claim.id).filter((id): id is string => Boolean(id));
+
+const pushFinding = (
+  findings: SpecialtyFinding[],
+  finding: Omit<SpecialtyFinding, 'relatedClaimIds'> & { relatedClaimIds?: string[] },
+) => {
+  findings.push({
+    ...finding,
+    relatedClaimIds: finding.relatedClaimIds?.filter(Boolean),
+  });
+};
+
+export const runSpecialtyRules = (claims: Claim[], timeline: TimelineEvent[]): SpecialtyFinding[] => {
+  const findings: SpecialtyFinding[] = [];
+
+  /**
+   * Legacy domains
+   */
+  const orthoComplaints = findClaims(claims, ['back pain', 'lumbar', 'knee', 'shoulder', 'orthopedic', 'spine']);
+  if (orthoComplaints.length) {
+    if (!hasSupportingClaim(claims, ['mri', 'ct', 'x-ray', 'xr', 'ultrasound']) || !hasSupportingClaim(claims, ['physical exam', 'range of motion', 'orthopedic exam'])) {
+      pushFinding(findings, {
+        code: 'MISSING_KEY_TEST_ORTHO',
+        message: 'תלונה אורטופדית ללא הדמיה ו/או בדיקה גופנית מתועדות.',
+        severity: 'warning',
+        domain: 'ORTHO',
+        relatedClaimIds: collectIds(orthoComplaints),
+      });
+    }
+  }
+
+  const neuroComplaints = findClaims(claims, ['neurolog', 'numbness', 'weakness', 'seizure', 'stroke', 'paresthesia']);
+  if (neuroComplaints.length && !hasSupportingClaim(claims, ['neurological exam', 'emg', 'nerve conduction', 'ct', 'mri'])) {
+    pushFinding(findings, {
+      code: 'MISSING_KEY_TEST_NEURO',
+      message: 'תלונה נוירולוגית ללא בדיקה או הדמיה נוירולוגית.',
+      severity: 'warning',
+      domain: 'NEURO',
+      relatedClaimIds: collectIds(neuroComplaints),
+    });
+  }
+
+  const cardioComplaints = findClaims(claims, ['chest pain', 'shortness of breath', 'dyspnea', 'palpitation']);
+  if (cardioComplaints.length && !hasSupportingClaim(claims, ['ecg', 'ekg', 'troponin', 'cardiac', 'echo', 'angiography'])) {
+    pushFinding(findings, {
+      code: 'MISSING_KEY_TEST_CARDIO',
+      message: 'תלונה קרדיאלית ללא ECG/בדיקות לב בסיסיות.',
+      severity: 'critical',
+      domain: 'CARDIO',
+      relatedClaimIds: collectIds(cardioComplaints),
+    });
+  }
+
+  const psychComplaints = findClaims(claims, ['ptsd', 'depression', 'anxiety', 'psychi', 'mental']);
+  if (psychComplaints.length && !hasSupportingClaim(claims, ['psychiatry', 'therapy', 'cbt', 'ssri', 'psych follow-up'])) {
+    pushFinding(findings, {
+      code: 'MISSING_KEY_TEST_PSYCH',
+      message: 'תלונות פסיכיאטריות ללא אבחנה או מעקב טיפולי מתועד.',
+      severity: 'warning',
+      domain: 'PSYCH',
+      relatedClaimIds: collectIds(psychComplaints),
+    });
+  }
+
+  if (timeline.some((event) => hasKeyword(normalize(event.type), ['therapy', 'rehab', 'physio']))) {
+    if (!hasTimelineEvent(timeline, ['follow', 'review', 'evaluation'])) {
+      pushFinding(findings, {
+        code: 'TREATMENT_GAP_REHAB',
+        message: 'טיפול שיקומי ללא תיעוד המשך או מעקב.',
+        severity: 'info',
+        domain: 'REHAB',
+      });
+    }
+  }
+
+  const dentalTrauma = findClaims(claims, ['jaw fracture', 'mandible', 'maxilla', 'שבר', 'fracture jaw', 'bite trauma']);
+  if (dentalTrauma.length && !hasSupportingClaim(claims, ['panoramic', 'ct', 'cbct', 'dental x-ray', 'occlusal'])) {
+    pushFinding(findings, {
+      code: 'MISSING_KEY_TEST_DENTAL_IMAGING',
+      message: 'פגיעה דנטלית ללא CT/צילום פנורמי תומך.',
+      severity: 'critical',
+      domain: 'DENTAL',
+      relatedClaimIds: collectIds(dentalTrauma),
+    });
+  }
+
+  const dentalImplant = findClaims(claims, ['implant', 'extraction', 'root canal', 'crown', 'bridge']);
+  if (dentalImplant.length && !hasSupportingClaim(claims, ['pre-op', 'post-op', 'follow-up', 'complication', 'צילום', 'documentation'])) {
+    pushFinding(findings, {
+      code: 'MISSING_KEY_DOC_DENTAL_PRE_POST',
+      message: 'טיפול דנטלי חודרני ללא תיעוד לפני/אחרי או סיבוכים.',
+      severity: 'warning',
+      domain: 'DENTAL',
+      relatedClaimIds: collectIds(dentalImplant),
+    });
+  }
+
+  const dentalInfection = findClaims(claims, ['abscess', 'infection', 'swelling', 'cellulitis', 'נפיחות']);
+  if (dentalInfection.length && !hasSupportingClaim(claims, ['antibiotic', 'drainage', 'incision', 'follow-up'])) {
+    pushFinding(findings, {
+      code: 'INFECTION_FOLLOWUP_MISSING_DENTAL',
+      message: 'זיהום דנטלי ללא אנטיביוטיקה/ניקוז/מעקב מתועד.',
+      severity: 'warning',
+      domain: 'DENTAL',
+      relatedClaimIds: collectIds(dentalInfection),
+    });
+  }
+
+  const dentalNerve = findClaims(claims, ['paresthesia', 'hypoesthesia', 'mental nerve', 'nerve injury', 'numbness']);
+  if (dentalNerve.length && !hasSupportingClaim(claims, ['neurolog', 'sensory test', 'cbct', 'emg'])) {
+    pushFinding(findings, {
+      code: 'NERVE_INJURY_EVAL_MISSING',
+      message: 'פגיעה עצבית דנטלית ללא בדיקה נוירולוגית/תחושתית.',
+      severity: 'warning',
+      domain: 'DENTAL',
+      relatedClaimIds: collectIds(dentalNerve),
+    });
+  }
+
+  const entAirway = findClaims(claims, ['sinusitis', 'nasal polyp', 'airway', 'throat mass', 'laryngeal', 'stridor']);
+  if (entAirway.length && !hasSupportingClaim(claims, ['endoscopy', 'fiberoptic', 'ct', 'mri', 'scope'])) {
+    pushFinding(findings, {
+      code: 'MISSING_KEY_TEST_ENT_ENDOSCOPY',
+      message: 'תלונות אף-אוזן-גרון ללא אנדוסקופיה/הדמיה תואמת.',
+      severity: 'warning',
+      domain: 'ENT',
+      relatedClaimIds: collectIds(entAirway),
+    });
+  }
+
+  const entHearing = findClaims(claims, ['hearing loss', 'tinnitus', 'otitis', 'ear fullness']);
+  if (entHearing.length && !hasSupportingClaim(claims, ['audiogram', 'tympanometry', 'hearing test'])) {
+    pushFinding(findings, {
+      code: 'MISSING_KEY_TEST_ENT_AUDIOMETRY',
+      message: 'פגיעה בשמיעה ללא בדיקת שמיעה פורמלית.',
+      severity: 'warning',
+      domain: 'ENT',
+      relatedClaimIds: collectIds(entHearing),
+    });
+  }
+
+  const entInfection = findClaims(claims, ['otitis', 'mastoiditis', 'tonsillitis', 'pharyngitis']);
+  if (entInfection.length && !hasSupportingClaim(claims, ['culture', 'antibiotic', 'follow-up', 'control visit'])) {
+    pushFinding(findings, {
+      code: 'ENT_INFECTION_FOLLOWUP_GAP',
+      message: 'זיהום ENT ללא תרבית/טיפול ומעקב מתועדים.',
+      severity: 'warning',
+      domain: 'ENT',
+      relatedClaimIds: collectIds(entInfection),
+    });
+  }
+
+  const gastroBleed = findClaims(claims, ['gi bleed', 'hematemesis', 'melena', 'ulcer', 'varices']);
+  if (gastroBleed.length && !hasSupportingClaim(claims, ['endoscopy', 'gastroscopy', 'banding', 'colonoscopy'])) {
+    pushFinding(findings, {
+      code: 'MISSING_KEY_TEST_GASTRO_ENDO',
+      message: 'דימום/כיב במערכת העיכול ללא תיעוד אנדוסקופי.',
+      severity: 'critical',
+      domain: 'GASTRO',
+      relatedClaimIds: collectIds(gastroBleed),
+    });
+  }
+
+  const gastroLiver = findClaims(claims, ['hepatitis', 'cirrhosis', 'liver failure', 'pancreatitis']);
+  if (gastroLiver.length && !hasSupportingClaim(claims, ['lft', 'ast', 'alt', 'amylase', 'lipase', 'bilirubin'])) {
+    pushFinding(findings, {
+      code: 'MISSING_KEY_TEST_GASTRO_LABS',
+      message: 'מצב כבד/לבלב ללא בדיקות מעבדה תומכות.',
+      severity: 'warning',
+      domain: 'GASTRO',
+      relatedClaimIds: collectIds(gastroLiver),
+    });
+  }
+
+  if (timeline.some((event) => hasKeyword(normalize(event.type), ['biologic', 'steroid', 'infusion']))) {
+    if (!hasTimelineEvent(timeline, ['clinic visit', 'follow', 'monitor', 'labs'])) {
+      pushFinding(findings, {
+        code: 'GASTRO_TREATMENT_GAP',
+        message: 'טיפול מדכא חיסון ללא מעקב/בדיקות לאחר מכן.',
+        severity: 'warning',
+        domain: 'GASTRO',
+      });
+    }
+  }
+
+  /**
+   * New specialties
+   */
+  // OBGYN
+  const pregnancyBleeding = findClaims(claims, ['pregnancy bleeding', 'vaginal bleed', 'placenta previa', 'שליה']);
+  if (pregnancyBleeding length)*** End Patch
+interface Claim {
+  id?: string;
+  type?: string;
+  value?: string;
+  date?: string;
+}
+
+interface TimelineEvent {
+  id: string;
+  type: string;
+  description: string;
+  date?: string;
+}
+
+type SpecialtyDomain =
+  | 'ORTHO'
+  | 'NEURO'
+  | 'CARDIO'
+  | 'PSYCH'
+  | 'REHAB'
+  | 'DENTAL'
+  | 'ENT'
+  | 'GASTRO'
+  | 'OBGYN'
+  | 'EMERGENCY'
+  | 'ICU'
+  | 'GENERAL_SURGERY'
+  | 'PLASTIC_SURGERY'
+  | 'COSMETIC_INJECTABLES';
+
+export interface SpecialtyFinding {
+  code: string;
+  message: string;
+  severity: 'info' | 'warning' | 'critical';
+  domain: SpecialtyDomain;
+  relatedClaimIds?: string[];
+}
+
+const normalize = (value?: string): string => (value ?? '').toLowerCase();
+
+const hasKeyword = (text: string, keywords: string[]): boolean => keywords.some((keyword) => text.includes(keyword));
+
+const findMatchingClaims = (claims: Claim[], keywords: string[]): Claim[] =>
+  claims.filter((claim) => hasKeyword(normalize(`${claim.type ?? ''} ${claim.value ?? ''}`), keywords));
+
+const hasSupportingClaim = (claims: Claim[], keywords: string[]): boolean =>
+  claims.some((claim) => hasKeyword(normalize(`${claim.type ?? ''} ${claim.value ?? ''}`), keywords));
+
+const hasTimelineEvent = (events: TimelineEvent[], keywords: string[]): boolean =>
+  events.some((event) => hasKeyword(normalize(event.type), keywords) || hasKeyword(normalize(event.description), keywords));
+
+const collectIds = (items: Claim[]): string[] => items.map((claim) => claim.id).filter((id): id is string => Boolean(id));
+
+const addFinding = (
+  findings: SpecialtyFinding[],
+  data: Omit<SpecialtyFinding, 'relatedClaimIds'> & { relatedClaimIds?: string[] },
+): void => {
+  findings.push({
+    ...data,
+    relatedClaimIds: data.relatedClaimIds?.filter(Boolean),
+  });
+};
+
+export const runSpecialtyRules = (claims: Claim[], timeline: TimelineEvent[]): SpecialtyFinding[] => {
+  const findings: SpecialtyFinding[] = [];
+
+  /**
+   * Legacy specialties
+   */
+  const orthoComplaints = findMatchingClaims(claims, ['back pain', 'lumbar', 'knee', 'shoulder', 'orthopedic', 'spine']);
+  if (orthoComplaints.length) {
+    if (!hasSupportingClaim(claims, ['mri', 'ct', 'x-ray', 'xr', 'ultrasound']) || !hasSupportingClaim(claims, ['physical exam', 'range of motion', 'orthopedic exam'])) {
+      addFinding(findings, {
+        code: 'MISSING_KEY_TEST_ORTHO',
+        message: 'תלונה אורטופדית ללא הדמיה ו/או בדיקה גופנית מתועדות.',
+        severity: 'warning',
+        domain: 'ORTHO',
+        relatedClaimIds: collectIds(orthoComplaints),
+      });
+    }
+  }
+
+  const neuroComplaints = findMatchingClaims(claims, ['neurolog', 'numbness', 'weakness', 'seizure', 'stroke', 'paresthesia']);
+  if (neuroComplaints.length && !hasSupportingClaim(claims, ['neurological exam', 'emg', 'nerve conduction', 'ct', 'mri'])) {
+    addFinding(findings, {
+      code: 'MISSING_KEY_TEST_NEURO',
+      message: 'תלונה נוירולוגית ללא בדיקה או הדמיה נוירולוגית.',
+      severity: 'warning',
+      domain: 'NEURO',
+      relatedClaimIds: collectIds(neuroComplaints),
+    });
+  }
+
+  const cardioComplaints = findMatchingClaims(claims, ['chest pain', 'shortness of breath', 'dyspnea', 'palpitation']);
+  if (cardioComplaints.length && !hasSupportingClaim(claims, ['ecg', 'ekg', 'troponin', 'cardiac', 'echo', 'angiography'])) {
+    addFinding(findings, {
+      code: 'MISSING_KEY_TEST_CARDIO',
+      message: 'תלונה קרדיאלית ללא ECG/בדיקות לב בסיסיות.',
+      severity: 'critical',
+      domain: 'CARDIO',
+      relatedClaimIds: collectIds(cardioComplaints),
+    });
+  }
+
+  const psychComplaints = findMatchingClaims(claims, ['ptsd', 'depression', 'anxiety', 'psychi', 'mental']);
+  if (psychComplaints.length && !hasSupportingClaim(claims, ['psychiatry', 'therapy', 'cbt', 'ssri', 'psych follow-up'])) {
+    addFinding(findings, {
+      code: 'MISSING_KEY_TEST_PSYCH',
+      message: 'תלונות פסיכיאטריות ללא אבחנה או מעקב טיפולי מתועד.',
+      severity: 'warning',
+      domain: 'PSYCH',
+      relatedClaimIds: collectIds(psychComplaints),
+    });
+  }
+
+  if (timeline.filter((event) => hasKeyword(normalize(event.type), ['therapy', 'rehab', 'physio'])).length) {
+    if (!hasTimelineEvent(timeline, ['follow', 'review', 'evaluation'])) {
+      addFinding(findings, {
+        code: 'TREATMENT_GAP_REHAB',
+        message: 'טיפול שיקומי ללא תיעוד המשך או מעקב.',
+        severity: 'info',
+        domain: 'REHAB',
+      });
+    }
+  }
+
+  const dentalTrauma = findMatchingClaims(claims, ['jaw fracture', 'mandible', 'maxilla', 'שבר', 'fracture jaw', 'bite trauma']);
+  if (dentalTrauma.length && !hasSupportingClaim(claims, ['panoramic', 'ct', 'cbct', 'dental x-ray', 'occlusal'])) {
+    addFinding(findings, {
+      code: 'MISSING_KEY_TEST_DENTAL_IMAGING',
+      message: 'פגיעה דנטלית ללא CT/צילום פנורמי תומך.',
+      severity: 'critical',
+      domain: 'DENTAL',
+      relatedClaimIds: collectIds(dentalTrauma),
+    });
+  }
+
+  const dentalImplant = findMatchingClaims(claims, ['implant', 'extraction', 'root canal', 'crown', 'bridge']);
+  if (dentalImplant.length && !hasSupportingClaim(claims, ['pre-op', 'post-op', 'follow-up', 'complication', 'צילום', 'documentation'])) {
+    addFinding(findings, {
+      code: 'MISSING_KEY_DOC_DENTAL_PRE_POST',
+      message: 'טיפול דנטלי חודרני ללא תיעוד לפני/אחרי או סיבוכים.',
+      severity: 'warning',
+      domain: 'DENTAL',
+      relatedClaimIds: collectIds(dentalImplant),
+    });
+  }
+
+  const dentalInfection = findMatchingClaims(claims, ['abscess', 'infection', 'swelling', 'cellulitis', 'נפיחות']);
+  if (dentalInfection.length && !hasSupportingClaim(claims, ['antibiotic', 'drainage', 'incision', 'follow-up'])) {
+    addFinding(findings, {
+      code: 'INFECTION_FOLLOWUP_MISSING_DENTAL',
+      message: 'זיהום דנטלי ללא אנטיביוטיקה/ניקוז/מעקב מתועד.',
+      severity: 'warning',
+      domain: 'DENTAL',
+      relatedClaimIds: collectIds(dentalInfection),
+    });
+  }
+
+  const dentalNerve = findMatchingClaims(claims, ['paresthesia', 'hypoesthesia', 'mental nerve', 'nerve injury', 'numbness']);
+  if (dentalNerve.length && !hasSupportingClaim(claims, ['neurolog', 'sensory test', 'cbct', 'emg'])) {
+    addFinding(findings, {
+      code: 'NERVE_INJURY_EVAL_MISSING',
+      message: 'פגיעה עצבית דנטלית ללא בדיקה נוירולוגית/תחושתית.',
+      severity: 'warning',
+      domain: 'DENTAL',
+      relatedClaimIds: collectIds(dentalNerve),
+    });
+  }
+
+  const entAirway = findMatchingClaims(claims, ['sinusitis', 'nasal polyp', 'airway', 'throat mass', 'laryngeal', 'stridor']);
+  if (entAirway.length && !hasSupportingClaim(claims, ['endoscopy', 'fiberoptic', 'ct', 'mri', 'scope'])) {
+    addFinding(findings, {
+      code: 'MISSING_KEY_TEST_ENT_ENDOSCOPY',
+      message: 'תלונות אף-אוזן-גרון ללא אנדוסקופיה/הדמיה תואמת.',
+      severity: 'warning',
+      domain: 'ENT',
+      relatedClaimIds: collectIds(entAirway),
+    });
+  }
+
+  const entHearing = findMatchingClaims(claims, ['hearing loss', 'tinnitus', 'otitis', 'ear fullness']);
+  if (entHearing.length && !hasSupportingClaim(claims, ['audiogram', 'tympanometry', 'hearing test'])) {
+    addFinding(findings, {
+      code: 'MISSING_KEY_TEST_ENT_AUDIOMETRY',
+      message: 'פגיעה בשמיעה ללא בדיקת שמיעה פורמלית.',
+      severity: 'warning',
+      domain: 'ENT',
+      relatedClaimIds: collectIds(entHearing),
+    });
+  }
+
+  const entInfection = findMatchingClaims(claims, ['otitis', 'mastoiditis', 'tonsillitis', 'pharyngitis']);
+  if (entInfection.length && !hasSupportingClaim(claims, ['culture', 'antibiotic', 'follow-up', 'control visit'])) {
+    addFinding(findings, {
+      code: 'ENT_INFECTION_FOLLOWUP_GAP',
+      message: 'זיהום ENT ללא תרבית/טיפול ומעקב מתועדים.',
+      severity: 'warning',
+      domain: 'ENT',
+      relatedClaimIds: collectIds(entInfection),
+    });
+  }
+
+  const gastroBleed = findMatchingClaims(claims, ['gi bleed', 'hematemesis', 'melena', 'ulcer', 'varices']);
+  if (gastroBleed.length && !hasSupportingClaim(claims, ['endoscopy', 'gastroscopy', 'banding', 'colonoscopy'])) {
+    addFinding(findings, {
+      code: 'MISSING_KEY_TEST_GASTRO_ENDO',
+      message: 'דימום/כיב במערכת העיכול ללא תיעוד אנדוסקופי.',
+      severity: 'critical',
+      domain: 'GASTRO',
+      relatedClaimIds: collectIds(gastroBleed),
+    });
+  }
+
+  const gastroLiver = findMatchingClaims(claims, ['hepatitis', 'cirrhosis', 'liver failure', 'pancreatitis']);
+  if (gastroLiver.length && !hasSupportingClaim(claims, ['lft', 'ast', 'alt', 'amylase', 'lipase', 'bilirubin'])) {
+    addFinding(findings, {
+      code: 'MISSING_KEY_TEST_GASTRO_LABS',
+      message: 'מצב כבד/לבלב ללא בדיקות מעבדה תומכות.',
+      severity: 'warning',
+      domain: 'GASTRO',
+      relatedClaimIds: collectIds(gastroLiver),
+    });
+  }
+
+  if (timeline.filter((event) => hasKeyword(normalize(event.type), ['biologic', 'steroid', 'infusion'])).length) {
+    if (!hasTimelineEvent(timeline, ['clinic visit', 'follow', 'monitor', 'labs'])) {
+      addFinding(findings, {
+        code: 'GASTRO_TREATMENT_GAP',
+        message: 'טיפול מדכא חיסון ללא מעקב/בדיקות לאחר מכן.',
+        severity: 'warning',
+        domain: 'GASTRO',
+      });
+    }
+  }
+
+  /**
+   * New specialties – OBGYN
+   */
+  const pregnancyBleeding = findMatchingClaims(claims, ['pregnancy bleeding', 'vaginal bleed', 'placenta previa', 'שליה']);
+  if (pregnancyBleeding.length && !hasSupportingClaim(claims, ['ultrasound', 'us', 'sonography', 'doppler'])) {
+    addFinding(findings, {
+      code: 'OBGYN_PREG_BLEED_NO_US',
+      message: 'דימום בהריון ללא תיעוד אולטרסאונד או מעקב עוברי.',
+      severity: 'critical',
+      domain: 'OBGYN',
+      relatedClaimIds: collectIds(pregnancyBleeding),
+    });
+  }
+
+  const preeclampsia = findMatchingClaims(claims, ['preeclampsia', 'gestational hypertension', 'רעלת']);
+  if (preeclampsia.length && !hasSupportingClaim(claims, ['proteinuria', 'urine protein', 'platelets', 'lft', 'creatinine'])) {
+    addFinding(findings, {
+      code: 'OBGYN_HTN_NO_LABS',
+      message: 'לחץ דם בהריון ללא בדיקות מעבדה או חלבון בשתן מתועדים.',
+      severity: 'warning',
+      domain: 'OBGYN',
+      relatedClaimIds: collectIds(preeclampsia),
+    });
+  }
+
+  const cesarean = findMatchingClaims(claims, ['cesarean', 'c-section', 'ניתוח קיסרי']);
+  if (cesarean.length && !hasSupportingClaim(claims, ['indication', 'placenta', 'fetal distress', 'labor arrest'])) {
+    addFinding(findings, {
+      code: 'OBGYN_CSECTION_NO_INDICATION',
+      message: 'ניתוח קיסרי ללא תיעוד אינדיקציה רפואית.',
+      severity: 'warning',
+      domain: 'OBGYN',
+      relatedClaimIds: collectIds(cesarean),
+    });
+  }
+
+  const postpartumInfection = findMatchingClaims(claims, ['postpartum fever', 'lochia odor', 'זיהום לאחר לידה']);
+  if (postpartumInfection length)*** End Patch
+interface Claim {
+  id?: string;
+  type?: string;
+  value?: string;
+  date?: string;
+}
+
+interface TimelineEvent {
+  id: string;
+  type: string;
+  description: string;
+  date?: string;
+}
+
+export type SpecialtyDomain =
+  | 'ORTHO'
+  | 'NEURO'
+  | 'CARDIO'
+  | 'PSYCH'
+  | 'REHAB'
+  | 'DENTAL'
+  | 'ENT'
+  | 'GASTRO'
+  | 'OBGYN'
+  | 'EMERGENCY'
+  | 'ICU'
+  | 'GENERAL_SURGERY'
+  | 'PLASTIC_SURGERY'
+  | 'COSMETIC_INJECTABLES';
+
+export interface SpecialtyFinding {
+  code: string;
+  message: string;
+  severity: 'info' | 'warning' | 'critical';
+  domain: SpecialtyDomain;
+  relatedClaimIds?: string[];
+}
+
+const normalize = (value?: string): string => (value ?? '').toLowerCase();
+const hasKeyword = (text: string, keywords: string[]): boolean => keywords.some((keyword) => text.includes(keyword));
+
+const findMatchingClaims = (claims: Claim[], keywords: string[]): Claim[] =>
+  claims.filter((claim) => hasKeyword(normalize(`${claim.type ?? ''} ${claim.value ?? ''}`), keywords));
+
+const hasSupportingClaim = (claims: Claim[], keywords: string[]): boolean =>
+  claims.some((claim) => hasKeyword(normalize(`${claim.type ?? ''} ${claim.value ?? ''}`), keywords));
+
+const hasTimelineEvent = (events: TimelineEvent[], keywords: string[]): boolean =>
+  events.some((event) => hasKeyword(normalize(event.type), keywords) || hasKeyword(normalize(event.description), keywords));
+
+const collectIds = (items: Claim[]): string[] => items.map((claim) => claim.id).filter((id): id is string => Boolean(id));
+
+const addFinding = (
+  findings: SpecialtyFinding[],
+  data: Omit<SpecialtyFinding, 'relatedClaimIds'> & { relatedClaimIds?: string[] },
+): void => {
+  findings.push({
+    ...data,
+    relatedClaimIds: data.relatedClaimIds?.filter(Boolean),
+  });
+};
+
+export const runSpecialtyRules = (claims: Claim[], timeline: TimelineEvent[]): SpecialtyFinding[] => {
+  const findings: SpecialtyFinding[] = [];
+
+  const claimText = (include: string[], exclude?: string[]): Claim[] =>
+    findMatchingClaims(claims, include).filter((claim) => {
+      if (!exclude?.length) return true;
+      const text = normalize(`${claim.type ?? ''} ${claim.value ?? ''}`);
+      return !exclude.some((word) => text.includes(word));
+    });
+
+  // ORTHO
+  const orthoComplaints = claimText(['back pain', 'lumbar', 'knee', 'shoulder', 'orthopedic', 'spine']);
+  if (orthoComplaints.length) {
+    if (!hasSupportingClaim(claims, ['mri', 'ct', 'x-ray', 'xr', 'ultrasound']) || !hasSupportingClaim(claims, ['physical exam', 'range of motion', 'orthopedic exam'])) {
+      addFinding(findings, {
+        code: 'MISSING_KEY_TEST_ORTHO',
+        message: 'תלונה אורטופדית ללא הדמיה ו/או בדיקה גופנית מתועדות.',
+        severity: 'warning',
+        domain: 'ORTHO',
+        relatedClaimIds: collectIds(orthoComplaints),
+      });
+    }
+  }
+
+  // NEURO
+  const neuroComplaints = claimText(['neurolog', 'numbness', 'weakness', 'seizure', 'stroke', 'paresthesia']);
+  if (neuroComplaints.length && !hasSupportingClaim(claims, ['neurological exam', 'emg', 'nerve conduction', 'ct', 'mri'])) {
+    addFinding(findings, {
+      code: 'MISSING_KEY_TEST_NEURO',
+      message: 'תלונה נוירולוגית ללא בדיקה או הדמיה נוירולוגית.',
+      severity: 'warning',
+      domain: 'NEURO',
+      relatedClaimIds: collectIds(neuroComplaints),
+    });
+  }
+
+  // CARDIO
+  const cardioComplaints = claimText(['chest pain', 'shortness of breath', 'dyspnea', 'palpitation']);
+  if (cardioComplaints.length && !hasSupportingClaim(claims, ['ecg', 'ekg', 'troponin', 'cardiac', 'echo', 'angiography'])) {
+    addFinding(findings, {
+      code: 'MISSING_KEY_TEST_CARDIO',
+      message: 'תלונה קרדיאלית ללא ECG/בדיקות לב בסיסיות.',
+      severity: 'critical',
+      domain: 'CARDIO',
+      relatedClaimIds: collectIds(cardioComplaints),
+    });
+  }
+
+  // PSYCH
+  const psychComplaints = claimText(['ptsd', 'depression', 'anxiety', 'psychi', 'mental']);
+  if (psychComplaints.length && !hasSupportingClaim(claims, ['psychiatry', 'therapy', 'cbt', 'ssri', 'psych follow-up'])) {
+    addFinding(findings, {
+      code: 'MISSING_KEY_TEST_PSYCH',
+      message: 'תלונות פסיכיאטריות ללא אבחנה או מעקב טיפולי מתועד.',
+      severity: 'warning',
+      domain: 'PSYCH',
+      relatedClaimIds: collectIds(psychComplaints),
+    });
+  }
+
+  // REHAB
+  if (timeline.filter((event) => hasKeyword(normalize(event.type), ['therapy', 'rehab', 'physio'])).length) {
+    if (!hasTimelineEvent(timeline, ['follow', 'review', 'evaluation'])) {
+      addFinding(findings, {
+        code: 'TREATMENT_GAP_REHAB',
+        message: 'טיפול שיקומי ללא תיעוד המשך או מעקב.',
+        severity: 'info',
+        domain: 'REHAB',
+      });
+    }
+  }
+
+  // DENTAL
+  const dentalTrauma = claimText(['jaw fracture', 'mandible', 'maxilla', 'שבר', 'fracture jaw', 'bite trauma']);
+  if (dentalTrauma.length && !hasSupportingClaim(claims, ['panoramic', 'ct', 'cbct', 'dental x-ray', 'occlusal'])) {
+    addFinding(findings, {
+      code: 'MISSING_KEY_TEST_DENTAL_IMAGING',
+      message: 'פגיעה דנטלית ללא CT/צילום פנורמי תומך.',
+      severity: 'critical',
+      domain: 'DENTAL',
+      relatedClaimIds: collectIds(dentalTrauma),
+    });
+  }
+
+  const dentalImplant = claimText(['implant', 'extraction', 'root canal', 'crown', 'bridge']);
+  if (dentalImplant.length && !hasSupportingClaim(claims, ['pre-op', 'post-op', 'follow-up', 'complication', 'צילום', 'documentation'])) {
+    addFinding(findings, {
+      code: 'MISSING_KEY_DOC_DENTAL_PRE_POST',
+      message: 'טיפול דנטלי חודרני ללא תיעוד לפני/אחרי או סיבוכים.',
+      severity: 'warning',
+      domain: 'DENTAL',
+      relatedClaimIds: collectIds(dentalImplant),
+    });
+  }
+
+  const dentalInfection = claimText(['abscess', 'infection', 'swelling', 'cellulitis', 'נפיחות']);
+  if (dentalInfection.length && !hasSupportingClaim(claims, ['antibiotic', 'drainage', 'incision', 'follow-up'])) {
+    addFinding(findings, {
+      code: 'INFECTION_FOLLOWUP_MISSING_DENTAL',
+      message: 'זיהום דנטלי ללא אנטיביוטיקה/ניקוז/מעקב מתועד.',
+      severity: 'warning',
+      domain: 'DENTAL',
+      relatedClaimIds: collectIds(dentalInfection),
+    });
+  }
+
+  const dentalNerve = claimText(['paresthesia', 'hypoesthesia', 'mental nerve', 'nerve injury', 'numbness']);
+  if (dentalNerve.length && !hasSupportingClaim(claims, ['neurolog', 'sensory test', 'cbct', 'emg'])) {
+    addFinding(findings, {
+      code: 'NERVE_INJURY_EVAL_MISSING',
+      message: 'פגיעה עצבית דנטלית ללא בדיקה נוירולוגית/תחושתית.',
+      severity: 'warning',
+      domain: 'DENTAL',
+      relatedClaimIds: collectIds(dentalNerve),
+    });
+  }
+
+  // ENT
+  const entAirway = claimText(['sinusitis', 'nasal polyp', 'airway', 'throat mass', 'laryngeal', 'stridor']);
+  if (entAirway.length && !hasSupportingClaim(claims, ['endoscopy', 'fiberoptic', 'ct', 'mri', 'scope'])) {
+    addFinding(findings, {
+      code: 'MISSING_KEY_TEST_ENT_ENDOSCOPY',
+      message: 'תלונות אף-אוזן-גרון ללא אנדוסקופיה/הדמיה תואמת.',
+      severity: 'warning',
+      domain: 'ENT',
+      relatedClaimIds: collectIds(entAirway),
+    });
+  }
+
+  const entHearing = claimText(['hearing loss', 'tinnitus', 'otitis', 'ear fullness']);
+  if (entHearing.length && !hasSupportingClaim(claims, ['audiogram', 'tympanometry', 'hearing test'])) {
+    addFinding(findings, {
+      code: 'MISSING_KEY_TEST_ENT_AUDIOMETRY',
+      message: 'פגיעה בשמיעה ללא בדיקת שמיעה פורמלית.',
+      severity: 'warning',
+      domain: 'ENT',
+      relatedClaimIds: collectIds(entHearing),
+    });
+  }
+
+  const entInfection = claimText(['otitis', 'mastoiditis', 'tonsillitis', 'pharyngitis']);
+  if (entInfection.length && !hasSupportingClaim(claims, ['culture', 'antibiotic', 'follow-up', 'control visit'])) {
+    addFinding(findings, {
+      code: 'ENT_INFECTION_FOLLOWUP_GAP',
+      message: 'זיהום ENT ללא תרבית/טיפול ומעקב מתועדים.',
+      severity: 'warning',
+      domain: 'ENT',
+      relatedClaimIds: collectIds(entInfection),
+    });
+  }
+
+  // GASTRO
+  const gastroBleed = claimText(['gi bleed', 'hematemesis', 'melena', 'ulcer', 'varices']);
+  if (gastroBleed.length && !hasSupportingClaim(claims, ['endoscopy', 'gastroscopy', 'banding', 'colonoscopy'])) {
+    addFinding(findings, {
+      code: 'MISSING_KEY_TEST_GASTRO_ENDO',
+      message: 'דימום/כיב במערכת העיכול ללא תיעוד אנדוסקופי.',
+      severity: 'critical',
+      domain: 'GASTRO',
+      relatedClaimIds: collectIds(gastroBleed),
+    });
+  }
+
+  const gastroLiver = claimText(['hepatitis', 'cirrhosis', 'liver failure', 'pancreatitis']);
+  if (gastroLiver.length && !hasSupportingClaim(claims, ['lft', 'ast', 'alt', 'amylase', 'lipase', 'bilirubin'])) {
+    addFinding(findings, {
+      code: 'MISSING_KEY_TEST_GASTRO_LABS',
+      message: 'מצב כבד/לבלב ללא בדיקות מעבדה תומכות.',
+      severity: 'warning',
+      domain: 'GASTRO',
+      relatedClaimIds: collectIds(g gastroLiver??)*** End Patch
+interface Claim {
+  id?: string;
+  type?: string;
+  value?: string;
+  date?: string;
+}
+
+interface TimelineEvent {
+  id: string;
+  type: string;
+  description: string;
+  date?: string;
+}
+
+type SpecialtyDomain =
+  | 'ORTHO'
+  | 'NEURO'
+  | 'CARDIO'
+  | 'PSYCH'
+  | 'REHAB'
+  | 'DENTAL'
+  | 'ENT'
+  | 'GASTRO'
+  | 'OBGYN'
+  | 'EMERGENCY'
+  | 'ICU'
+  | 'GENERAL_SURGERY'
+  | 'PLASTIC_SURGERY'
+  | 'COSMETIC_INJECTABLES';
+
+export interface SpecialtyFinding {
+  code: string;
+  message: string;
+  severity: 'info' | 'warning' | 'critical';
+  domain: SpecialtyDomain;
+  relatedClaimIds?: string[];
+}
+
+const normalize = (value?: string): string => (value ?? '').toLowerCase();
+const hasKeyword = (text: string, keywords: string[]): boolean => keywords.some((keyword) => text.includes(keyword));
+
+const findMatchingClaims = (claims: Claim[], keywords: string[]): Claim[] =>
+  claims.filter((claim) => hasKeyword(normalize(`${claim.type ?? ''} ${claim.value ?? ''}`), keywords));
+
+const hasSupportingClaim = (claims: Claim[], keywords: string[]): boolean =>
+  claims.some((claim) => hasKeyword(normalize(`${claim.type ?? ''} ${claim.value ?? ''}`), keywords));
+
+const hasTimelineEvent = (events: TimelineEvent[], keywords: string[]): boolean =>
+  events.some((event) => {
+    const typeText = normalize(event.type);
+    const descText = normalize(event.description);
+    return hasKeyword(typeText, keywords) || hasKeyword(descText, keywords);
+  });
+
+const collectIds = (items: Claim[]): string[] =>
+  items.map((claim) => claim.id).filter((id): id is string => Boolean(id));
+
+export const runSpecialtyRules = (claims: Claim[], timeline: TimelineEvent[]): SpecialtyFinding[] => {
+  const findings: SpecialtyFinding[] = [];
+
+  // ORTHO
+  const orthoComplaints = findMatchingClaims(claims, ['back pain', 'lumbar', 'knee', 'shoulder', 'orthopedic', 'spine']);
+  if (orthoComplaints.length) {
+    const hasImaging = hasSupportingClaim(claims, ['mri', 'ct', 'x-ray', 'xr', 'ultrasound']);
+    const hasExam = hasSupportingClaim(claims, ['physical exam', 'range of motion', 'orthopedic exam']);
+    if (!hasImaging || !hasExam) {
+      findings.push({
+        code: 'MISSING_KEY_TEST_ORTHO',
+        message: 'תלונה אורטופדית ללא הדמיה ו/או בדיקה גופנית מתועדת.',
+        severity: 'warning',
+        domain: 'ORTHO',
+        relatedClaimIds: collectIds(orthoComplaints),
+      });
+    }
+  }
+
+  // NEURO
+  const neuroComplaints = findMatchingClaims(claims, ['neurolog', 'numbness', 'weakness', 'seizure', 'stroke', 'paresthesia']);
+  if (neuroComplaints.length) {
+    const hasNeuroTest = hasSupportingClaim(claims, ['neurological exam', 'emg', 'nerve conduction', 'ct', 'mri']);
+    if (!hasNeuroTest) {
+      findings.push({
+        code: 'MISSING_KEY_TEST_NEURO',
+        message: 'תלונה נוירולוגית ללא בדיקה או הדמיה נוירולוגית.',
+        severity: 'warning',
+        domain: 'NEURO',
+        relatedClaimIds: collectIds(neuroComplaints),
+      });
+    }
+  }
+
+  // CARDIO
+  const cardioComplaints = findMatchingClaims(claims, ['chest pain', 'shortness of breath', 'dyspnea', 'palpitation']);
+  if (cardioComplaints.length) {
+    const hasCardioTest = hasSupportingClaim(claims, ['ecg', 'ekg', 'troponin', 'cardiac', 'echo', 'angiography']);
+    if (!hasCardioTest) {
+      findings.push({
+        code: 'MISSING_KEY_TEST_CARDIO',
+        message: 'תלונה קרדיאלית ללא ECG/בדיקות לב בסיסיות.',
+        severity: 'critical',
+        domain: 'CARDIO',
+        relatedClaimIds: collectIds(cardioComplaints),
+      });
+    }
+  }
+
+  // PSYCH
+  const psychComplaints = findMatchingClaims(claims, ['ptsd', 'depression', 'anxiety', 'psychi', 'mental']);
+  if (psychComplaints.length) {
+    const hasPsychPlan = hasSupportingClaim(claims, ['psychiatry', 'therapy', 'cbt', 'ssri', 'psych follow-up']);
+    if (!hasPsychPlan) {
+      findings.push({
+        code: 'MISSING_KEY_TEST_PSYCH',
+        message: 'תלונות פסיכיאטריות ללא אבחנה או מעקב טיפולי מתועד.',
+        severity: 'warning',
+        domain: 'PSYCH',
+        relatedClaimIds: collectIds(psychComplaints),
+      });
+    }
+  }
+
+  // REHAB
+  const rehabEvents = timeline.filter((event) => hasKeyword(normalize(event.type), ['therapy', 'rehab', 'physio']));
+  if (rehabEvents.length) {
+    const followUpExists = hasTimelineEvent(timeline, ['follow', 'review', 'evaluation']);
+    if (!followUpExists) {
+      findings.push({
+        code: 'TREATMENT_GAP_REHAB',
+        message: 'טיפול שיקומי ללא תיעוד המשך או מעקב.',
+        severity: 'info',
+        domain: 'REHAB',
+      });
+    }
+  }
+
+  // DENTAL
+  const dentalTrauma = findMatchingClaims(claims, ['jaw fracture', 'mandible', 'maxilla', 'שבר', 'fracture jaw', 'bite trauma']);
+  if (dentalTrauma.length) {
+    const hasDentalImaging = hasSupportingClaim(claims, ['panoramic', 'ct', 'cbct', 'dental x-ray', 'occlusal']);
+    if (!hasDentalImaging) {
+      findings.push({
+        code: 'MISSING_KEY_TEST_DENTAL_IMAGING',
+        message: 'פגיעה דנטלית ללא CT/צילום פנורמי תומך.',
+        severity: 'critical',
+        domain: 'DENTAL',
+        relatedClaimIds: collectIds(dentalTrauma),
+      });
+    }
+  }
+
+  const dentalImplantCases = findMatchingClaims(claims, ['implant', 'extraction', 'root canal', 'crown', 'bridge']);
+  if (dentalImplantCases.length) {
+    const hasPrePost = hasSupportingClaim(claims, ['pre-op', 'post-op', 'follow-up', 'complication', 'צילום', 'documentation']);
+    if (!hasPrePost) {
+      findings.push({
+        code: 'MISSING_KEY_DOC_DENTAL_PRE_POST',
+        message: 'טיפול דנטלי חודרני ללא תיעוד לפני/אחרי או סיבוכים.',
+        severity: 'warning',
+        domain: 'DENTAL',
+        relatedClaimIds: collectIds(dentalImplantCases),
+      });
+    }
+  }
+
+  const dentalInfection = findMatchingClaims(claims, ['abscess', 'infection', 'swelling', 'cellulitis', 'נפיחות']);
+  if (dentalInfection.length) {
+    const hasTherapy = hasSupportingClaim(claims, ['antibiotic', 'drainage', 'incision', 'follow-up']);
+    if (!hasTherapy) {
+      findings.push({
+        code: 'INFECTION_FOLLOWUP_MISSING_DENTAL',
+        message: 'זיהום דנטלי ללא אנטיביוטיקה/ניקוז/מעקב מתועד.',
+        severity: 'warning',
+        domain: 'DENTAL',
+        relatedClaimIds: collectIds(dentalInfection),
+      });
+    }
+  }
+
+  const dentalNerve = findMatchingClaims(claims, ['paresthesia', 'hypoesthesia', 'mental nerve', 'nerve injury', 'numbness']);
+  if (dentalNerve.length) {
+    const hasNeuroEval = hasSupportingClaim(claims, ['neurolog', 'sensory test', 'cbct', 'emg']);
+    if (!hasNeuroEval) {
+      findings.push({
+        code: 'NERVE_INJURY_EVAL_MISSING',
+        message: 'פגיעה עצבית דנטלית ללא בדיקה נוירולוגית/תחושתית.',
+        severity: 'warning',
+        domain: 'DENTAL',
+        relatedClaimIds: collectIds(dentalNerve),
+      });
+    }
+  }
+
+  // ENT
+  const entAirway = findMatchingClaims(claims, ['sinusitis', 'nasal polyp', 'airway', 'throat mass', 'laryngeal', 'stridor']);
+  if (entAirway.length) {
+    const hasEndoscopy = hasSupportingClaim(claims, ['endoscopy', 'fiberoptic', 'ct', 'mri', 'scope']);
+    if (!hasEndoscopy) {
+      findings.push({
+        code: 'MISSING_KEY_TEST_ENT_ENDOSCOPY',
+        message: 'תלונות אף-אוזן-גרון ללא אנדוסקופיה/הדמיה תואמת.',
+        severity: 'warning',
+        domain: 'ENT',
+        relatedClaimIds: collectIds(entAirway),
+      });
+    }
+  }
+
+  const entHearing = findMatchingClaims(claims, ['hearing loss', 'tinnitus', 'otitis', 'ear fullness']);
+  if (entHearing.length) {
+    const hasAudiogram = hasSupportingClaim(claims, ['audiogram', 'tympanometry', 'hearing test']);
+    if (!hasAudiogram) {
+      findings.push({
+        code: 'MISSING_KEY_TEST_ENT_AUDIOMETRY',
+        message: 'פגיעה בשמיעה ללא בדיקת שמיעה פורמלית.',
+        severity: 'warning',
+        domain: 'ENT',
+        relatedClaimIds: collectIds(entHearing),
+      });
+    }
+  }
+
+  const entInfection = findMatchingClaims(claims, ['otitis', 'mastoiditis', 'tonsillitis', 'pharyngitis']);
+  if (entInfection.length) {
+    const hasFollow = hasSupportingClaim(claims, ['culture', 'antibiotic', 'follow-up', 'control visit']);
+    if (!hasFollow) {
+      findings.push({
+        code: 'ENT_INFECTION_FOLLOWUP_GAP',
+        message: 'זיהום ENT ללא תרבית/טיפול ומעקב מתועדים.',
+        severity: 'warning',
+        domain: 'ENT',
+        relatedClaimIds: collectIds(entInfection),
+      });
+    }
+  }
+
+  // GASTRO
+  const gastroBleed = findMatchingClaims(claims, ['gi bleed', 'hematemesis', 'melena', 'ulcer', 'varices']);
+  if (gastroBleed.length) {
+    const hasEndoscopy = hasSupportingClaim(claims, ['endoscopy', 'gastroscopy', 'banding', 'colonoscopy']);
+    if (!hasEndoscopy) {
+      findings.push({
+        code: 'MISSING_KEY_TEST_GASTRO_ENDO',
+        message: 'דימום/כיב במערכת העיכול ללא תיעוד אנדוסקופי.',
+        severity: 'critical',
+        domain: 'GASTRO',
+        relatedClaimIds: collectIds(gastroBleed),
+      });
+    }
+  }
+
+  const gastroLiver = findMatchingClaims(claims, ['hepatitis', 'cirrhosis', 'liver failure', 'pancreatitis']);
+  if (gastroLiver.length) {
+    const hasLabs = hasSupportingClaim(claims, ['lft', 'ast', 'alt', 'amylase', 'lipase', 'bilirubin']);
+    if (!hasLabs) {
+      findings.push({
+        code: 'MISSING_KEY_TEST_GASTRO_LABS',
+        message: 'מצב כבד/לבלב ללא בדיקות מעבדה תומכות.',
+        severity: 'warning',
+        domain: 'GASTRO',
+        relatedClaimIds: collectIds(gastroLiver),
+      });
+    }
+  }
+
+  const gastroTherapyEvents = timeline.filter((event) => hasKeyword(normalize(event.type), ['biologic', 'steroid', 'infusion']));
+  if (gastroTherapyEvents.length) {
+    const followUpExists = hasTimelineEvent(timeline, ['clinic visit', 'follow', 'monitor', 'labs']);
+    if (!followUpExists) {
+      findings.push({
+        code: 'GASTRO_TREATMENT_GAP',
+        message: 'טיפול מדכא חיסון ללא מעקב/בדיקות לאחר מכן.',
+        severity: 'warning',
+        domain: 'GASTRO',
+      });
+    }
+  }
+
+  // OBGYN
+  const pregnancyBleeding = findMatchingClaims(claims, ['pregnancy bleeding', 'vaginal bleed', 'שליה', 'placenta previa']);
+  if (pregnancyBleeding.length) {
+    const hasUltrasound = hasSupportingClaim(claims, ['ultrasound', 'us', 'sonography', 'doppler']);
+    if (!hasUltrasound) {
+      findings.push({
+        code: 'OBGYN_PREG_BLEED_NO_US',
+        message: 'דימום בהריון ללא תיעוד אולטרסאונד או מעקב עוברי.',
+        severity: 'critical',
+        domain: 'OBGYN',
+        relatedClaimIds: collectIds(pregnancyBleeding),
+      });
+    }
+  }
+
+  const preeclampsiaClaims = findMatchingClaims(claims, ['preeclampsia', 'רעלת', 'gestational hypertension']);
+  if (preeclampsiaClaims.length) {
+    const hasLabs = hasSupportingClaim(claims, ['proteinuria', 'urine protein', 'platelets', 'lft', 'creatinine']);
+    if (!hasLabs) {
+      findings.push({
+        code: 'OBGYN_HTN_NO_LABS',
+        message: 'לחץ דם בהריון ללא בדיקות מעבדה או חלבון בשתן מתועדים.',
+        severity: 'warning',
+        domain: 'OBGYN',
+        relatedClaimIds: collectIds(preeclampsiaClaims),
+      });
+    }
+  }
+
+  const cesareanClaims = findMatchingClaims(claims, ['cesarean', 'c-section', 'ניתוח קיסרי']);
+  if (cesareanClaims.length) {
+    const hasIndication = hasSupportingClaim(claims, ['indication', 'placenta', 'fetal distress', 'דופק עוברי', 'labor arrest']);
+    if (!hasIndication) {
+      findings.push({
+        code: 'OBGYN_CSECTION_NO_INDICATION',
+        message: 'ניתוח קיסרי ללא תיעוד אינדיקציה רפואית.',
+        severity: 'warning',
+        domain: 'OBGYN',
+        relatedClaimIds: collectIds(cesareanClaims),
+      });
+    }
+  }
+
+  const postpartumInfection = findMatchingClaims(claims, ['postpartum fever', 'lochia odor', 'זיהום לאחר לידה']);
+  if (postpartumInfection.length) {
+    const hasCulture = hasSupportingClaim(claims, ['culture', 'antibiotic', 'broad spectrum', 'cefazolin', 'metronidazole']);
+    if (!hasCulture) {
+      findings.push({
+        code: 'OBGYN_POSTPARTUM_INFECTION_GAP',
+        message: 'זיהום לאחר לידה ללא תרבית/אנטיביוטיקה מתועדות.',
+        severity: 'warning',
+        domain: 'OBGYN',
+        relatedClaimIds: collectIds(postpartumInfection),
+      });
+    }
+  }
+
+  const fetalDistress = findMatchingClaims(claims, ['reduced fetal movement', 'non reassuring', 'oligohydramnios']);
+  if (fetalDistress.length) {
+    const hasMonitoring = hasSupportingClaim(claims, ['nst', 'biophysical', 'ctg', 'doppler']);
+    if (!hasMonitoring) {
+      findings.push({
+        code: 'OBGYN_FETAL_MONITORING_MISSING',
+        message: 'חשד למצוקת עובר ללא ניטור NST/BPP מתועד.',
+        severity: 'critical',
+        domain: 'OBGYN',
+        relatedClaimIds: collectIds(fetalDistress),
+      });
+    }
+  }
+
+  const vbacClaims = findMatchingClaims(claims, ['vbac', 'trial of labor after cesarean', 'הלידה לאחר קיסרי']);
+  if (vbacClaims.length) {
+    const hasConsent = hasSupportingClaim(claims, ['consent', 'risk discussion', 'signed', 'הסכמה']);
+    if (!hasConsent) {
+      findings.push({
+        code: 'OBGYN_VBAC_NO_CONSENT',
+        message: 'ניסיון לידה לאחר קיסרי ללא תיעוד הסכמה מדעת.',
+        severity: 'warning',
+        domain: 'OBGYN',
+        relatedClaimIds: collectIds(vbacClaims),
+      });
+    }
+  }
+
+  // EMERGENCY
+  const emergencyChestPain = findMatchingClaims(claims, ['er chest pain', 'emergency chest', 'triage chest']);
+  if (emergencyChestPain.length) {
+    const hasECG = hasSupportingClaim(claims, ['ecg', 'troponin', 'spo2', 'sat']);
+    if (!hasECG) {
+      findings.push({
+        code: 'EMERGENCY_CHEST_PAIN_NO_ECG',
+        message: 'כאב חזה בחדר מיון ללא ECG/טרופונין/סטורציה מתועדים.',
+        severity: 'critical',
+        domain: 'EMERGENCY',
+        relatedClaimIds: collectIds(emergencyChestPain),
+      });
+    }
+  }
+
+  const emergencyDyspnea = findMatchingClaims(claims, ['shortness of breath', 'dyspnea', 'respiratory distress']);
+  if (emergencyDyspnea.length) {
+    const hasOxygen = hasSupportingClaim(claims, ['spo2', 'pulse ox', 'arterial blood gas', 'abg']);
+    if (!hasOxygen) {
+      findings.push({
+        code: 'EMERGENCY_RESP_NO_MONITOR',
+        message: 'קוצר נשימה ללא ניטור סטורציה או גזים בדם.',
+        severity: 'critical',
+        domain: 'EMERGENCY',
+        relatedClaimIds: collectIds(emergencyDyspnea),
+      });
+    }
+  }
+
+  const headTraumaClaims = findMatchingClaims(claims, ['head trauma', 'concussion', 'gcs', 'loss of consciousness']);
+  if (headTraumaClaims.length) {
+    const hasNeuroExam = hasSupportingClaim(claims, ['neuro exam', 'ct head', 'mri brain', 'gcs score']);
+    if (!hasNeuroExam) {
+      findings.push({
+        code: 'EMERGENCY_HEAD_INJURY_NO_ASSESS',
+        message: 'חבלת ראש ללא בדיקה נוירולוגית או הדמיה לפי הצורך.',
+        severity: 'warning',
+        domain: 'EMERGENCY',
+        relatedClaimIds: collectIds(headTraumaClaims),
+      });
+    }
+  }
+
+  const fractureClaims = findMatchingClaims(claims, ['fracture', 'bone deformity', 'דפורמציה', 'קרסול שבור']);
+  if (fractureClaims.length) {
+    const hasImaging = hasSupportingClaim(claims, ['x-ray', 'ct', 'splint', 'casting']);
+    if (!hasImaging) {
+      findings.push({
+        code: 'EMERGENCY_FRACTURE_NO_IMAGING',
+        message: 'חשד לשבר ללא צילום/קיבוע מתועד.',
+        severity: 'warning',
+        domain: 'EMERGENCY',
+        relatedClaimIds: collectIds(fractureClaims),
+      });
+    }
+  }
+
+  const feverClaims = findMatchingClaims(claims, ['fever 39', 'sepsis suspicion', 'febrile']);
+  if (feverClaims.length) {
+    const hasLabs = hasSupportingClaim(claims, ['cbc', 'blood culture', 'urinalysis', 'lactate']);
+    if (!hasLabs) {
+      findings.push({
+        code: 'EMERGENCY_FEVER_NO_WORKUP',
+        message: 'חום משמעותי בחדר מיון ללא בדיקות בסיסיות.',
+        severity: 'warning',
+        domain: 'EMERGENCY',
+        relatedClaimIds: collectIds(feverClaims),
+      });
+    }
+  }
+
+  const severePainClaims = findMatchingClaims(claims, ['10/10 pain', 'severe pain', 'analgesia']);
+  if (severePainClaims.length) {
+    const hasPainPlan = hasSupportingClaim(claims, ['analgesia', 'opioid', 'pain protocol', 'reassessment']);
+    if (!hasPainPlan) {
+      findings.push({
+        code: 'EMERGENCY_PAIN_NO_PLAN',
+        message: 'כאב חריף ללא תיעוד טיפול/הערכה חוזרת.',
+        severity: 'info',
+        domain: 'EMERGENCY',
+        relatedClaimIds: collectIds(severePainClaims),
+      });
+    }
+  }
+
+  // ICU
+  const sepsisClaims = findMatchingClaims(claims, ['sepsis', 'septic shock', 'bacteremia']);
+  if (sepsisClaims.length) {
+    const hasCultures = hasSupportingClaim(claims, ['blood culture', 'lactate', 'broad spectrum']);
+    if (!hasCultures) {
+      findings.push({
+        code: 'ICU_SEPSIS_NO_CULTURE',
+        message: 'אבחנת ספסיס ללא תרביות/לקטט מתועדים.',
+        severity: 'critical',
+        domain: 'ICU',
+        relatedClaimIds: collectIds(sepsisClaims),
+      });
+    }
+  }
+
+  const ventilationClaims = findMatchingClaims(claims, ['mechanical ventilation', 'intubated', 'respiratory failure']);
+  if (ventilationClaims.length) {
+    const hasABG = hasSupportingClaim(claims, ['abg', 'arterial blood gas', 'vent settings', 'peak pressure']);
+    if (!hasABG) {
+      findings.push({
+        code: 'ICU_VENT_NO_ABG',
+        message: 'חולה מונשם ללא גזים בדם או פרמטרי הנשמה מתועדים.',
+        severity: 'warning',
+        domain: 'ICU',
+        relatedClaimIds: collectIds(ventilationClaims),
+      });
+    }
+  }
+
+  const shockClaims = findMatchingClaims(claims, ['shock', 'vasopressor', 'map <', 'hypotension']);
+  if (shockClaims.length) {
+    const hasMonitoring = hasSupportingClaim(claims, ['arterial line', 'lactate', 'urine output', 'cvp']);
+    if (!hasMonitoring) {
+      findings.push({
+        code: 'ICU_SHOCK_NO_MONITOR',
+        message: 'חוסר יציבות המודינמית ללא ניטור/מעקב נדרש.',
+        severity: 'critical',
+        domain: 'ICU',
+        relatedClaimIds: collectIds(shockClaims),
+      });
+    }
+  }
+
+  const sedationClaims = findMatchingClaims(claims, ['sedation', 'propofol', 'midazolam', 'dexmedetomidine']);
+  if (sedationClaims.length) {
+    const hasScale = hasSupportingClaim(claims, ['rass', 'sedation scale', 'bis', 'neuro exam']);
+    if (!hasScale) {
+      findings.push({
+        code: 'ICU_SEDATION_NO_SCALE',
+        message: 'טיפול סדציה ללא ניטור עומק/סקאלה מתועדת.',
+        severity: 'warning',
+        domain: 'ICU',
+        relatedClaimIds: collectIds(sedationClaims),
+      });
+    }
+  }
+
+  const neuroChangeClaims = findMatchingClaims(claims, ['altered mental status', 'coma', 'gcs drop']);
+  if (neuroChangeClaims.length) {
+    const hasImaging = hasSupportingClaim(claims, ['ct head', 'mri brain', 'electrolytes']);
+    if (!hasImaging) {
+      findings.push({
+        code: 'ICU_NEURO_CHANGE_NO_WORKUP',
+        message: 'שינוי במצב ההכרה ללא בירור או הדמיה מספקת.',
+        severity: 'warning',
+        domain: 'ICU',
+        relatedClaimIds: collectIds(neuroChangeClaims),
+      });
+    }
+  }
+
+  const nutritionClaims = findMatchingClaims(claims, ['tpn', 'enteral feeding', 'malnutrition']);
+  if (nutritionClaims.length) {
+    const hasPlan = hasSupportingClaim(claims, ['calorie', 'dietitian', 'feeding protocol']);
+    if (!hasPlan) {
+      findings.push({
+        code: 'ICU_NUTRITION_GAP',
+        message: 'חסר תיעוד של תכנית הזנה/תמיכה תזונתית בחולה קריטי.',
+        severity: 'info',
+        domain: 'ICU',
+        relatedClaimIds: collectIds(nutritionClaims),
+      });
+    }
+  }
+
+  // GENERAL SURGERY
+  const acuteAbdomen = findMatchingClaims(claims, ['acute abdomen', 'peritonitis', 'guarding', 'rigid abdomen']);
+  if (acuteAbdomen.length) {
+    const hasConsult = hasSupportingClaim(claims, ['surgical consult', 'ct abdomen', 'surgery evaluation']);
+    if (!hasConsult) {
+      findings.push({
+        code: 'GENSURG_ACUTE_ABD_NO_REVIEW',
+        message: 'כאב בטן חריף ללא הערכת כירורג/הדמיה דחופה.',
+        severity: 'critical',
+        domain: 'GENERAL_SURGERY',
+        relatedClaimIds: collectIds(acuteAbdomen),
+      });
+    }
+  }
+
+  const appendicitisClaims = findMatchingClaims(claims, ['appendicitis', 'rlq pain', 'מקברני']);
+  if (appendicitisClaims.length) {
+    const hasImaging = hasSupportingClaim(claims, ['ct', 'ultrasound', 'mri abdomen']);
+    if (!hasImaging) {
+      findings.push({
+        code: 'GENSURG_APPENDIX_NO_IMAGING',
+        message: 'חשד לתוספתן ללא הדמיה/אישור כירורגי.',
+        severity: 'warning',
+        domain: 'GENERAL_SURGERY',
+        relatedClaimIds: collectIds(appendicitisClaims),
+      });
+    }
+  }
+
+  const gallbladderClaims = findMatchingClaims(claims, ['cholecystitis', 'gallbladder', 'biliary colic']);
+  if (gallbladderClaims.length) {
+    const hasUS = hasSupportingClaim(claims, ['ultrasound', 'hida', 'ct']);
+    if (!hasUS) {
+      findings.push({
+        code: 'GENSURG_BILIARY_NO_US',
+        message: 'חשד לבעיה בכיס מרה ללא אולטרסאונד מתועד.',
+        severity: 'warning',
+        domain: 'GENERAL_SURGERY',
+        relatedClaimIds: collectIds(gallbladderClaims),
+      });
+    }
+  }
+
+  const postopBleed = findMatchingClaims(claims, ['postoperative bleed', 'drop hemoglobin', 'hematoma post op']);
+  if (postopBleed.length) {
+    const hasLabs = hasSupportingClaim(claims, ['cbc', 'hemoglobin', 'ct abdomen']);
+    if (!hasLabs) {
+      findings.push({
+        code: 'GENSURG_POSTOP_BLEED_NO_LABS',
+        message: 'חשד לדימום לאחר ניתוח ללא בדיקות דם/הדמיה מתועדות.',
+        severity: 'critical',
+        domain: 'GENERAL_SURGERY',
+        relatedClaimIds: collectIds(postopBleed),
+      });
+    }
+  }
+
+  const postopComplications = findMatchingClaims(claims, ['wound infection', 'dehiscence', 'ileus', 'abscess']);
+  if (postopComplications.length) {
+    const hasFollow = hasSupportingClaim(claims, ['follow-up', 'reoperation', 'drain', 'clinic visit']);
+    if (!hasFollow) {
+      findings.push({
+        code: 'GENSURG_COMPLICATION_NO_FOLLOWUP',
+        message: 'סיבוך ניתוחי ללא מעקב/טיפול מתועד.',
+        severity: 'warning',
+        domain: 'GENERAL_SURGERY',
+        relatedClaimIds: collectIds(postopComplications),
+      });
+    }
+  }
+
+  const obstructionClaims = findMatchingClaims(claims, ['bowel obstruction', 'ileus', 'vomiting bilious']);
+  if (obstructionClaims.length) {
+    const hasPlan = hasSupportingClaim(claims, ['ng tube', 'surgery consult', 'imaging']);
+    if (!hasPlan) {
+      findings.push({
+        code: 'GENSURG_OBSTRUCTION_NO_PLAN',
+        message: 'חשד לחסימת מעי ללא תיעוד טיפול/הדמיה.',
+        severity: 'warning',
+        domain: 'GENERAL_SURGERY',
+        relatedClaimIds: collectIds(obstructionClaims),
+      });
+    }
+  }
+
+  // PLASTIC SURGERY
+  const plasticOps = findMatchingClaims(claims, ['breast reconstruction', 'facelift', 'rhinoplasty', 'abdominoplasty']);
+  if (plasticOps.length) {
+    const hasOutcome = hasSupportingClaim(claims, ['photos', 'follow-up', 'satisfaction', 'complication noted']);
+    if (!hasOutcome) {
+      findings.push({
+        code: 'PLASTIC_OP_NO_OUTCOME',
+        message: 'ניתוח פלסטי ללא תיעוד תוצאות/מעקב.',
+        severity: 'warning',
+        domain: 'PLASTIC_SURGERY',
+        relatedClaimIds: collectIds(plasticOps),
+      });
+    }
+  }
+
+  const plasticInfection = findMatchingClaims(claims, ['flap necrosis', 'infection reconstruction', 'cellulitis graft']);
+  if (plasticInfection.length) {
+    const hasTreatment = hasSupportingClaim(claims, ['antibiotic', 'debridement', 'drainage']);
+    if (!hasTreatment) {
+      findings.push({
+        code: 'PLASTIC_INFECTION_NO_TREATMENT',
+        message: 'זיהום או נמק ניתוח פלסטי ללא טיפול מתועד.',
+        severity: 'critical',
+        domain: 'PLASTIC_SURGERY',
+        relatedClaimIds: collectIds(plasticInfection),
+      });
+    }
+  }
+
+  const implantClaims = findMatchingClaims(claims, ['implant rupture', 'silicone', 'implant exchange']);
+  if (implantClaims.length) {
+    const hasDeviceInfo = hasSupportingClaim(claims, ['lot', 'batch', 'manufacturer', 'catalog']);
+    if (!hasDeviceInfo) {
+      findings.push({
+        code: 'PLASTIC_IMPLANT_NO_DEVICE_INFO',
+        message: 'החלפת/השתלת שתל ללא תיעוד פרטי המכשיר.',
+        severity: 'warning',
+        domain: 'PLASTIC_SURGERY',
+        relatedClaimIds: collectIds(implantClaims),
+      });
+    }
+  }
+
+  const necrosisClaims = findMatchingClaims(claims, ['skin necrosis', 'flap failure', 'ischemia skin']);
+  if (necrosisClaims.length) {
+    const hasAction = hasSupportingClaim(claims, ['debridement', 'hyperbaric', 'reoperation']);
+    if (!hasAction) {
+      findings.push({
+        code: 'PLASTIC_NECROSIS_NO_PLAN',
+        message: 'נמק לאחר ניתוח פלסטי ללא תכנית טיפול מתועדת.',
+        severity: 'warning',
+        domain: 'PLASTIC_SURGERY',
+        relatedClaimIds: collectIds(n
+
