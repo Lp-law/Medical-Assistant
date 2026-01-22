@@ -51,10 +51,15 @@ router.get('/', async (req, res) => {
   const allCases = await prisma.case.findMany({
     orderBy: { updatedAt: 'desc' },
   });
-  const ownCases = allCases.filter((record) => record.ownerId === req.user!.id).map((record) => buildOwnerCaseResponse(record, req.user!.id));
+
+  const ownCases = allCases
+    .filter((record) => record.ownerId === req.user!.id)
+    .map((record) => buildOwnerCaseResponse(record, req.user!.id));
+
   const otherCases = allCases
     .filter((record) => record.ownerId !== req.user!.id)
     .map((record) => buildPublicCaseResponse(record, req.user!.id));
+
   res.json({ ownCases, otherCases });
 });
 
@@ -64,8 +69,10 @@ router.post('/', async (req, res) => {
     res.status(400).json({ error: 'invalid_body' });
     return;
   }
+
   const payload = parseResult.data;
   const now = new Date();
+
   const created = await prisma.case.create({
     data: {
       ownerId: req.user!.id,
@@ -77,6 +84,7 @@ router.post('/', async (req, res) => {
       status: CaseStatus.ACTIVE,
     },
   });
+
   await logAuditEvent({
     action: 'CASE_CREATED',
     userId: req.user!.id,
@@ -84,16 +92,19 @@ router.post('/', async (req, res) => {
     entityId: created.id,
     metadata: { title: created.title },
   });
+
   res.status(201).json({ case: buildOwnerCaseResponse(created, req.user!.id) });
 });
 
 router.get('/:id', async (req, res) => {
   try {
     const record = await ensureOwner(req.params.id, req.user!.id);
+
     const updated = await prisma.case.update({
       where: { id: record.id },
       data: { lastAccessedAt: new Date() },
     });
+
     res.json({ case: buildOwnerCaseResponse(updated, req.user!.id) });
   } catch (error) {
     res.status((error as any).status ?? 500).json({ error: (error as Error).message });
@@ -106,9 +117,12 @@ router.patch('/:id', async (req, res) => {
     res.status(400).json({ error: 'invalid_body' });
     return;
   }
+
   try {
     const existing = await ensureOwner(req.params.id, req.user!.id);
+
     const nextTitle = parseResult.data.title ?? existing.title;
+
     const updated = await prisma.case.update({
       where: { id: existing.id },
       data: {
@@ -117,6 +131,7 @@ router.patch('/:id', async (req, res) => {
         data: (parseResult.data.data as Prisma.InputJsonValue | undefined) ?? (existing.data as Prisma.InputJsonValue),
       },
     });
+
     res.json({ case: buildOwnerCaseResponse(updated, req.user!.id) });
   } catch (error) {
     res.status((error as any).status ?? 500).json({ error: (error as Error).message });
@@ -129,9 +144,12 @@ router.patch('/:id/metadata', async (req, res) => {
     res.status(400).json({ error: 'invalid_body' });
     return;
   }
+
   try {
     const existing = await ensureOwner(req.params.id, req.user!.id);
+
     const nextTitle = parsed.data.title ?? existing.title;
+
     const updated = await prisma.case.update({
       where: { id: existing.id },
       data: {
@@ -141,6 +159,7 @@ router.patch('/:id/metadata', async (req, res) => {
           : generateCaseTopicSummary(nextTitle, existing.data),
       },
     });
+
     res.json({ case: buildOwnerCaseResponse(updated, req.user!.id) });
   } catch (error) {
     res.status((error as any).status ?? 500).json({ error: (error as Error).message });
@@ -150,6 +169,7 @@ router.patch('/:id/metadata', async (req, res) => {
 router.post('/:id/archive', async (req, res) => {
   try {
     const existing = await ensureOwner(req.params.id, req.user!.id);
+
     const updated = await prisma.case.update({
       where: { id: existing.id },
       data: {
@@ -157,6 +177,7 @@ router.post('/:id/archive', async (req, res) => {
         archivedAt: new Date(),
       },
     });
+
     res.json({ case: buildOwnerCaseResponse(updated, req.user!.id) });
   } catch (error) {
     res.status((error as any).status ?? 500).json({ error: (error as Error).message });
@@ -166,6 +187,7 @@ router.post('/:id/archive', async (req, res) => {
 router.post('/:id/renew', async (req, res) => {
   try {
     const existing = await ensureOwner(req.params.id, req.user!.id);
+
     const updated = await prisma.case.update({
       where: { id: existing.id },
       data: {
@@ -176,12 +198,14 @@ router.post('/:id/renew', async (req, res) => {
         retentionFinalWarningSent: false,
       },
     });
+
     await logAuditEvent({
       action: 'CASE_RENEWED',
       userId: req.user!.id,
       entityType: 'case',
       entityId: updated.id,
     });
+
     res.json({ case: buildOwnerCaseResponse(updated, req.user!.id) });
   } catch (error) {
     res.status((error as any).status ?? 500).json({ error: (error as Error).message });
@@ -194,13 +218,17 @@ router.post('/:id/export', async (req, res) => {
     res.status(400).json({ error: 'invalid_body' });
     return;
   }
+
   try {
     const record = await ensureOwner(req.params.id, req.user!.id);
+
     const result = await exportCase(record, parsed.data.format);
+
     await prisma.case.update({
       where: { id: record.id },
       data: { lastAccessedAt: new Date() },
     });
+
     res.setHeader('Content-Type', result.mime);
     res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
     res.send(result.buffer);
@@ -212,13 +240,16 @@ router.post('/:id/export', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const existing = await ensureOwner(req.params.id, req.user!.id);
+
     await deleteCaseAndAssets(existing);
+
     await logAuditEvent({
       action: 'CASE_DELETED',
       userId: req.user!.id,
       entityType: 'case',
       entityId: existing.id,
     });
+
     res.status(204).end();
   } catch (error) {
     res.status((error as any).status ?? 500).json({ error: (error as Error).message });
@@ -226,4 +257,3 @@ router.delete('/:id', async (req, res) => {
 });
 
 export const casesRouter = router;
-

@@ -9,7 +9,11 @@ if (connectionString) {
   blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
 }
 
-export const uploadPdfToStorage = async (buffer: Buffer, filename: string, mimeType: string): Promise<string | null> => {
+export const uploadFileToStorage = async (
+  buffer: Buffer,
+  filename: string,
+  mimeType: string,
+): Promise<string | null> => {
   if (!blobServiceClient) {
     console.warn('[storage] missing connection string, skipping upload');
     return null;
@@ -24,4 +28,7 @@ export const uploadPdfToStorage = async (buffer: Buffer, filename: string, mimeT
   });
   return blockBlobClient.url;
 };
+
+// Backwards-compatible alias (existing ingestion code expects PDF name)
+export const uploadPdfToStorage = uploadFileToStorage;
 

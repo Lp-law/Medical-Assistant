@@ -39,7 +39,9 @@ router.get('/', async (req, res) => {
     const allCases = await prisma_1.prisma.case.findMany({
         orderBy: { updatedAt: 'desc' },
     });
-    const ownCases = allCases.filter((record) => record.ownerId === req.user.id).map((record) => (0, caseLifecycle_1.buildOwnerCaseResponse)(record, req.user.id));
+    const ownCases = allCases
+        .filter((record) => record.ownerId === req.user.id)
+        .map((record) => (0, caseLifecycle_1.buildOwnerCaseResponse)(record, req.user.id));
     const otherCases = allCases
         .filter((record) => record.ownerId !== req.user.id)
         .map((record) => (0, caseLifecycle_1.buildPublicCaseResponse)(record, req.user.id));

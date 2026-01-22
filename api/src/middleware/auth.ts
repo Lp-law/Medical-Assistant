@@ -17,7 +17,8 @@ export const requireAuth = (req: Request, res: Response, next: NextFunction): vo
       return;
     }
     const user = verifyAccessToken(token);
-    req.user = user;
+    // Placeholder for future permission expansion (requested): keep a boolean flag on the user object.
+    req.user = { ...user, isAdmin: user.role === 'admin' } as any;
     next();
   } catch (error) {
     console.error('[auth] invalid token', error);

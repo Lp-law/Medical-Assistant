@@ -14,7 +14,11 @@ const knowledge_1 = require("./routes/knowledge");
 const literature_1 = require("./routes/literature");
 const notifications_1 = require("./routes/notifications");
 const caseRetention_1 = require("./jobs/caseRetention");
+const emailFetcher_1 = require("./jobs/emailFetcher");
 const env_1 = require("./services/env");
+const documents_1 = require("./routes/documents");
+const categories_1 = require("./routes/categories");
+const admin_1 = require("./routes/admin");
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)({
     origin: env_1.config.corsOrigins,
@@ -31,8 +35,12 @@ app.use('/api/cases', cases_1.casesRouter);
 app.use('/api/knowledge', knowledge_1.knowledgeRouter);
 app.use('/api/literature', literature_1.literatureRouter);
 app.use('/api/notifications', notifications_1.notificationsRouter);
+app.use('/api/documents', documents_1.documentsRouter);
+app.use('/api/categories', categories_1.categoriesRouter);
+app.use('/api/admin', admin_1.adminRouter);
 const port = env_1.config.port;
 app.listen(port, () => {
     console.log(`LexMedical API listening on port ${port}`);
     (0, caseRetention_1.startCaseRetentionJobs)();
+    (0, emailFetcher_1.startEmailFetcherJobs)();
 });

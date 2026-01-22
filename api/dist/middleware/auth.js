@@ -17,7 +17,8 @@ const requireAuth = (req, res, next) => {
             return;
         }
         const user = (0, authService_1.verifyAccessToken)(token);
-        req.user = user;
+        // Placeholder for future permission expansion (requested): keep a boolean flag on the user object.
+        req.user = { ...user, isAdmin: user.role === 'admin' };
         next();
     }
     catch (error) {

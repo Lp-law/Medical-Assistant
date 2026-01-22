@@ -13,6 +13,11 @@ enum CaseStatus {
   PENDING_DELETE
 }
 
+enum DocumentSource {
+  EMAIL
+  MANUAL
+}
+
 model User {
   id             String         @id
   username       String         @unique
@@ -121,5 +126,40 @@ model Notification {
 
   case Case? @relation(fields: [caseId], references: [id], onDelete: SetNull)
   user User @relation(fields: [userId], references: [id])
+}
+
+model Document {
+  id            String           @id
+  title         String
+  summary       String           @default("")
+  content       String?          // extracted text (for free-text search); may be null
+  categoryId    String
+  category      Category         @relation(fields: [categoryId], references: [id])
+  keywords      String[]         @default([])
+  topics        String[]         @default([])
+  source        DocumentSource
+
+  emailFrom     String?
+  emailSubject  String?
+  emailDate     DateTime?
+  emailMessageId String?         @unique
+
+  attachmentUrl String?
+  attachmentMime String?
+
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+}
+
+model Category {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  documents Document[]
+}
+
+model EmailIngestionState {
+  mailbox   String   @id
+  lastUid   BigInt   @default(0)
+  updatedAt DateTime @updatedAt
 }
 

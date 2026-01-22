@@ -1,0 +1,32 @@
+[
+  {
+    "topic": "הולדה בעוולה",
+    "phrases": ["הולדה בעוולה", "wrongful birth", "wrongful life"]
+  },
+  {
+    "topic": "רשלנות בלידה",
+    "phrases": ["רשלנות בלידה", "לידה", "מיילדות", "OBGYN", "obstetrics"]
+  },
+  {
+    "topic": "נזק מוחי",
+    "phrases": ["נזק מוחי", "hypoxic", "asphyxia", "שיתוק מוחין", "CP", "cerebral palsy"]
+  },
+  {
+    "topic": "לחץ דם גבוה",
+    "phrases": ["לחץ דם", "לחץ דם גבוה", "יתר לחץ דם", "hypertension", "preeclampsia", "רעלת"]
+  },
+  {
+    "topic": "אבחון שגוי",
+    "phrases": ["אבחון שגוי", "misdiagnosis", "delay in diagnosis", "איחור באבחון"]
+  },
+  {
+    "topic": "תיקון כתב תביעה",
+    "phrases": ["תיקון כתב תביעה", "amended statement of claim", "amendment"]
+  },
+  {
+    "topic": "שיתוק עצב",
+    "phrases": ["שיתוק עצב", "nerve palsy", "nerve injury", "פגיעה עצבית", "paresis"]
+  }
+]
+
+

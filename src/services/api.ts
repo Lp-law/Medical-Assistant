@@ -39,6 +39,10 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
 
 export { request as apiRequest };
 
+export const authFetch = (path: string, init?: RequestInit): Promise<Response> => {
+  return fetch(`${API_BASE_URL}${path}`, withAuth(init));
+};
+
 export const isApiConfigured = (): boolean => Boolean(API_BASE_URL);
 
 export const uploadChapterPdf = async (file: File, options: UploadChapterOptions = {}): Promise<IngestedDocument> => {

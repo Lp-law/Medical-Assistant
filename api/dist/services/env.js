@@ -23,6 +23,15 @@ const envSchema = zod_1.z.object({
     JWT_SECRET: zod_1.z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
     JWT_ACCESS_TTL_MINUTES: zod_1.z.string().optional(),
     DATABASE_URL: zod_1.z.string().optional(),
+    // IMAP ingestion (email → documents)
+    IMAP_ENABLED: zod_1.z.string().optional(),
+    IMAP_HOST: zod_1.z.string().optional(),
+    IMAP_PORT: zod_1.z.string().optional(),
+    IMAP_SECURE: zod_1.z.string().optional(),
+    IMAP_USER: zod_1.z.string().optional(),
+    IMAP_PASSWORD: zod_1.z.string().optional(),
+    IMAP_MAILBOX: zod_1.z.string().optional(),
+    IMAP_FROM_FILTER: zod_1.z.string().optional(),
 });
 const env = envSchema.parse(process.env);
 const parseAuthUsers = (raw) => {
@@ -71,4 +80,14 @@ exports.config = {
         accessTtlMinutes: env.JWT_ACCESS_TTL_MINUTES ? Number(env.JWT_ACCESS_TTL_MINUTES) : 30,
     },
     databaseUrl: env.DATABASE_URL ?? '',
+    imap: {
+        enabled: (env.IMAP_ENABLED ?? '').toLowerCase() === 'true',
+        host: env.IMAP_HOST ?? '',
+        port: env.IMAP_PORT ? Number(env.IMAP_PORT) : 993,
+        secure: (env.IMAP_SECURE ?? 'true').toLowerCase() !== 'false',
+        user: env.IMAP_USER ?? '',
+        password: env.IMAP_PASSWORD ?? '',
+        mailbox: env.IMAP_MAILBOX ?? 'INBOX',
+        fromFilter: env.IMAP_FROM_FILTER ?? '',
+    },
 };

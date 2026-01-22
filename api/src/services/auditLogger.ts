@@ -24,4 +24,3 @@ export const logAuditEvent = async (event: AuditEventPayload): Promise<void> => 
     console.warn('[audit] failed to persist audit event', error);
   }
 };
-

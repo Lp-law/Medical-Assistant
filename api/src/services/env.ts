@@ -32,6 +32,16 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
   JWT_ACCESS_TTL_MINUTES: z.string().optional(),
   DATABASE_URL: z.string().optional(),
+
+  // IMAP ingestion (email → documents)
+  IMAP_ENABLED: z.string().optional(),
+  IMAP_HOST: z.string().optional(),
+  IMAP_PORT: z.string().optional(),
+  IMAP_SECURE: z.string().optional(),
+  IMAP_USER: z.string().optional(),
+  IMAP_PASSWORD: z.string().optional(),
+  IMAP_MAILBOX: z.string().optional(),
+  IMAP_FROM_FILTER: z.string().optional(),
 });
 
 const env = envSchema.parse(process.env);
@@ -82,5 +92,15 @@ export const config = {
     accessTtlMinutes: env.JWT_ACCESS_TTL_MINUTES ? Number(env.JWT_ACCESS_TTL_MINUTES) : 30,
   },
   databaseUrl: env.DATABASE_URL ?? '',
+  imap: {
+    enabled: (env.IMAP_ENABLED ?? '').toLowerCase() === 'true',
+    host: env.IMAP_HOST ?? '',
+    port: env.IMAP_PORT ? Number(env.IMAP_PORT) : 993,
+    secure: (env.IMAP_SECURE ?? 'true').toLowerCase() !== 'false',
+    user: env.IMAP_USER ?? '',
+    password: env.IMAP_PASSWORD ?? '',
+    mailbox: env.IMAP_MAILBOX ?? 'INBOX',
+    fromFilter: env.IMAP_FROM_FILTER ?? '',
+  },
 };
 

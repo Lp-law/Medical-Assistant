@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.uploadPdfToStorage = void 0;
+exports.uploadPdfToStorage = exports.uploadFileToStorage = void 0;
 const storage_blob_1 = require("@azure/storage-blob");
 const uuid_1 = require("uuid");
 const env_1 = require("./env");
@@ -9,7 +9,7 @@ let blobServiceClient = null;
 if (connectionString) {
     blobServiceClient = storage_blob_1.BlobServiceClient.fromConnectionString(connectionString);
 }
-const uploadPdfToStorage = async (buffer, filename, mimeType) => {
+const uploadFileToStorage = async (buffer, filename, mimeType) => {
     if (!blobServiceClient) {
         console.warn('[storage] missing connection string, skipping upload');
         return null;
@@ -23,4 +23,6 @@ const uploadPdfToStorage = async (buffer, filename, mimeType) => {
     });
     return blockBlobClient.url;
 };
-exports.uploadPdfToStorage = uploadPdfToStorage;
+exports.uploadFileToStorage = uploadFileToStorage;
+// Backwards-compatible alias (existing ingestion code expects PDF name)
+exports.uploadPdfToStorage = exports.uploadFileToStorage;

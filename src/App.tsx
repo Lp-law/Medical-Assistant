@@ -22,6 +22,7 @@ import {
   FileText,
   LayoutDashboard,
   BookOpen,
+  Library,
   Download,
   Upload,
   Bell,
@@ -29,6 +30,7 @@ import {
 } from 'lucide-react';
 import ContextRibbon from './components/ContextRibbon';
 import LegalDisclaimer from './components/LegalDisclaimer';
+import DocumentsLibrary from './components/DocumentsLibrary';
 
 const createEmptyCase = (attorney: string): CaseData => ({
   id: Date.now().toString(),
@@ -338,6 +340,7 @@ const App: React.FC = () => {
     { label: 'תחשיבי נזק', icon: Activity, step: 2 },
     { label: 'נימוקים משפטיים', icon: BookOpen, step: 3 },
     { label: 'דוח מסכם', icon: FileText, step: 4 },
+    { label: 'מאגר ידע', icon: Library, step: 5 },
   ];
 
   const currentCaseRecord = caseList.find((record) => record.id === currentCaseId);
@@ -527,8 +530,8 @@ const App: React.FC = () => {
                       חזרה
                     </button>
                     <button
-                      onClick={() => setActiveStep((prev) => Math.min(4, prev + 1))}
-                      disabled={activeStep === 4}
+                      onClick={() => setActiveStep((prev) => Math.min(5, prev + 1))}
+                      disabled={activeStep === 5}
                       className="rounded-full bg-gold px-5 py-2 text-xs font-semibold text-navy flex items-center gap-2 hover:bg-gold-light transition disabled:opacity-40"
                     >
                       {activeStep === 0 ? 'התחל עבודה' : 'לשלב הבא'}
@@ -618,6 +621,12 @@ const App: React.FC = () => {
               {activeStep === 4 && (
                 <SectionCard title="דוח מסכם">
                   <ReportStep caseData={currentCase} />
+                </SectionCard>
+              )}
+
+              {activeStep === 5 && (
+                <SectionCard title="מאגר ידע פנימי" subtitle="חיפוש והעלאה של מסמכים משרדיים">
+                  <DocumentsLibrary />
                 </SectionCard>
               )}
             </div>
