@@ -76,17 +76,18 @@ export const runImapIngestionCycle = async (): Promise<ImapCycleResult> => {
   // imapflow emits 'error' events on the client; without a listener Node will crash the process.
   // Capture and log these errors, and let the request fail gracefully.
   let lastClientError: any = null;
-  client.on('error', (err) => {
-    lastClientError = err;
+  client.on('error', (err: Error) => {
+    const e = err as any;
+    lastClientError = e;
     console.error('[imap] client error event', {
       mailbox,
-      errorName: err?.name,
-      errorMessage: err?.message,
-      errorCode: err?.code,
-      response: err?.response,
-      responseText: err?.responseText,
-      executedCommand: err?.executedCommand,
-      authenticationFailed: err?.authenticationFailed,
+      errorName: e?.name,
+      errorMessage: e?.message,
+      errorCode: e?.code,
+      response: e?.response,
+      responseText: e?.responseText,
+      executedCommand: e?.executedCommand,
+      authenticationFailed: e?.authenticationFailed,
     });
   });
 
