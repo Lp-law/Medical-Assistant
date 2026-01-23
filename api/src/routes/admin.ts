@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth';
 import { runEmailFetcherOnce } from '../jobs/emailFetcher';
+import { config } from '../services/env';
 
 export const adminRouter = Router();
 
@@ -27,6 +28,16 @@ const safeNumber = (value: bigint): number | string => {
 // Manual trigger for IMAP ingestion (same logic as cron), admin-only.
 adminRouter.post('/email-ingest-now', requireAdmin, async (_req, res) => {
   try {
+    if (!config.imap.enabled) {
+      res.status(400).json({
+        processedMessages: 0,
+        documentsCreated: 0,
+        lastUid: 0,
+        success: false,
+        error: 'imap_disabled',
+      });
+      return;
+    }
     const result = await runEmailFetcherOnce();
     res.json({
       processedMessages: result.fetched,
@@ -35,12 +46,23 @@ adminRouter.post('/email-ingest-now', requireAdmin, async (_req, res) => {
       success: true,
     });
   } catch (error: any) {
+    const message = error?.message ?? 'email_ingest_failed';
+    if (message === 'imap_config_missing') {
+      res.status(400).json({
+        processedMessages: 0,
+        documentsCreated: 0,
+        lastUid: 0,
+        success: false,
+        error: 'imap_config_missing',
+      });
+      return;
+    }
     res.status(500).json({
       processedMessages: 0,
       documentsCreated: 0,
       lastUid: 0,
       success: false,
-      error: error?.message ?? 'email_ingest_failed',
+      error: message,
     });
   }
 });

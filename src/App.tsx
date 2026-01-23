@@ -2,12 +2,9 @@ import React, { ReactNode, useMemo, useState } from 'react';
 import { useAuth } from './context/AuthContext';
 import LoginScreen from './components/LoginScreen';
 import {
-  Library,
-  FileText,
-  Scale,
-  Stethoscope,
   Calculator,
   Search,
+  UploadCloud,
   Bot,
   Bell,
   UserCircle,
@@ -16,29 +13,20 @@ import {
 import ContextRibbon from './components/ContextRibbon';
 import LegalDisclaimer from './components/LegalDisclaimer';
 import DocumentsLibrary from './components/DocumentsLibrary';
-import QuickUploadModal from './components/QuickUploadModal';
 import { runEmailIngestNow } from './services/adminApi';
 import BotAssistantWidget from './components/BotAssistantWidget';
 import DamagesCalculator from './components/DamagesCalculator';
 
 type Page = 'home' | 'documents' | 'calculator';
 
-type UploadCategoryKey = 'judgments' | 'damages' | 'opinions' | 'summaries';
-
-const CATEGORY_NAME: Record<UploadCategoryKey, string> = {
-  judgments: 'פסקי דין',
-  damages: 'תחשיבי נזק',
-  opinions: 'חוות דעת',
-  summaries: 'סיכומים',
-};
-
 const App: React.FC = () => {
   const { user, logout } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [pageStack, setPageStack] = useState<Page[]>(['home']);
-  const [uploadCategory, setUploadCategory] = useState<UploadCategoryKey | null>(null);
   const [homeSearch, setHomeSearch] = useState('');
   const [homeCategoryName, setHomeCategoryName] = useState<string | undefined>(undefined);
+  const [documentsInitialTab, setDocumentsInitialTab] = useState<'search' | 'upload'>('search');
+  const [botOpen, setBotOpen] = useState(false);
   const [homeIngestLoading, setHomeIngestLoading] = useState(false);
   const [homeIngestResult, setHomeIngestResult] = useState<string | null>(null);
 
@@ -125,7 +113,7 @@ const App: React.FC = () => {
           <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
             {currentPage === 'home' && (
               <>
-                <SectionCard title="מרכז ידע משרדי" subtitle="העלאה מהירה + חיפוש">
+                <SectionCard title="חיפוש במאגר הידע" subtitle="מילים חופשיות + עוזר AI">
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="rounded-card border border-pearl bg-white p-4">
                       <label className="text-xs font-semibold text-slate-light">חיפוש מהיר</label>
@@ -141,7 +129,10 @@ const App: React.FC = () => {
                         </div>
                         <button
                           type="button"
-                          onClick={() => pushPage('documents')}
+                          onClick={() => {
+                            setDocumentsInitialTab('search');
+                            pushPage('documents');
+                          }}
                           className="rounded-full bg-navy text-gold px-4 py-2 text-sm font-semibold hover:bg-navy/90 transition"
                         >
                           חפש
@@ -155,12 +146,16 @@ const App: React.FC = () => {
                     <div className="rounded-card border border-pearl bg-white p-4 flex items-center justify-between">
                       <div>
                         <p className="text-sm font-semibold text-navy">עוזר חיפוש (AI)</p>
-                        <p className="text-xs text-slate mt-1">בקרוב: בוט שמציע חיפושים ותוצאות בתוך המערכת.</p>
+                        <p className="text-xs text-slate mt-1">לחץ כדי לפתוח את הבוט (או הכפתור הצף בפינה).</p>
                       </div>
-                      <div className="rounded-full border border-pearl text-slate px-4 py-2 text-sm font-semibold inline-flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setBotOpen(true)}
+                        className="rounded-full border border-pearl text-slate px-4 py-2 text-sm font-semibold inline-flex items-center gap-2 hover:bg-pearl/50 transition"
+                      >
                         <Bot className="w-4 h-4 text-gold" />
-                        פתח דרך כפתור הבוט הצף
-                      </div>
+                        פתח בוט
+                      </button>
                     </div>
                   </div>
 
@@ -171,6 +166,7 @@ const App: React.FC = () => {
                         כפתור ידני שמריץ את משיכת המסמכים מה־IMAP (אדמין בלבד).
                       </p>
                       {homeIngestResult && <p className="text-xs mt-2 text-slate">{homeIngestResult}</p>}
+                      {!isAdmin && <p className="text-[11px] mt-2 text-slate-light">כדי להפעיל: התחבר עם משתמש Admin.</p>}
                     </div>
                     <button
                       type="button"
@@ -185,73 +181,22 @@ const App: React.FC = () => {
                   </div>
                 </SectionCard>
 
-                <SectionCard title="הזנת ידע (4 קטגוריות)" subtitle="PDF / Word">
-                  <div className="grid gap-4 md:grid-cols-2">
+                <SectionCard title="העלאת ידע" subtitle="המסך השני (מסמכים → העלאה)">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-navy">העלאה ל־4 קטגוריות + יצירת קטגוריות</p>
+                      <p className="text-xs text-slate mt-1">נמצא במסך “מסמכים”, בלשונית “העלאה”.</p>
+                    </div>
                     <button
                       type="button"
-                      onClick={() => setUploadCategory('judgments')}
-                      className="rounded-card border border-pearl bg-white p-5 text-right hover:shadow-card-xl transition"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-lg font-semibold text-navy">פסקי דין</p>
-                          <p className="text-xs text-slate mt-1">העלה פסקי דין למאגר הידע.</p>
-                        </div>
-                        <Scale className="w-6 h-6 text-gold" />
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setUploadCategory('damages')}
-                      className="rounded-card border border-pearl bg-white p-5 text-right hover:shadow-card-xl transition"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-lg font-semibold text-navy">תחשיבי נזק</p>
-                          <p className="text-xs text-slate mt-1">מסמכי חישוב/אקסלים כ‑PDF/Word.</p>
-                        </div>
-                        <Calculator className="w-6 h-6 text-gold" />
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setUploadCategory('opinions')}
-                      className="rounded-card border border-pearl bg-white p-5 text-right hover:shadow-card-xl transition"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-lg font-semibold text-navy">חוות דעת</p>
-                          <p className="text-xs text-slate mt-1">חוות דעת מומחים (PDF/Word).</p>
-                        </div>
-                        <Stethoscope className="w-6 h-6 text-gold" />
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setUploadCategory('summaries')}
-                      className="rounded-card border border-pearl bg-white p-5 text-right hover:shadow-card-xl transition"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-lg font-semibold text-navy">סיכומים</p>
-                          <p className="text-xs text-slate mt-1">סיכומים שהוכנו בתיקים אחרים.</p>
-                        </div>
-                        <FileText className="w-6 h-6 text-gold" />
-                      </div>
-                    </button>
-                  </div>
-
-                  <div className="mt-4 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => pushPage('documents')}
+                      onClick={() => {
+                        setDocumentsInitialTab('upload');
+                        pushPage('documents');
+                      }}
                       className="rounded-full bg-gold text-navy px-5 py-2 text-sm font-semibold hover:bg-gold-light transition inline-flex items-center gap-2"
                     >
-                      <Library className="w-4 h-4" />
-                      עבור למסך מסמכים (חיפוש/תיוג)
+                      <UploadCloud className="w-4 h-4" />
+                      עבור להעלאת ידע
                     </button>
                   </div>
                 </SectionCard>
@@ -278,7 +223,12 @@ const App: React.FC = () => {
 
             {currentPage === 'documents' && (
               <SectionCard title="מסמכים" subtitle="חיפוש, העלאה, תיוג">
-                <DocumentsLibrary initialQuery={homeSearch} initialCategoryName={homeCategoryName} autoSearchOnMount />
+                <DocumentsLibrary
+                  initialTab={documentsInitialTab}
+                  initialQuery={homeSearch}
+                  initialCategoryName={homeCategoryName}
+                  autoSearchOnMount
+                />
               </SectionCard>
             )}
 
@@ -292,17 +242,13 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      <QuickUploadModal
-        isOpen={uploadCategory !== null}
-        categoryName={uploadCategory ? CATEGORY_NAME[uploadCategory] : ''}
-        onClose={() => setUploadCategory(null)}
-        onUploaded={() => undefined}
-      />
-
       <BotAssistantWidget
+        open={botOpen}
+        onOpenChange={setBotOpen}
         onOpenDocumentsWithQuery={(q, categoryName) => {
           setHomeSearch(q);
           setHomeCategoryName(categoryName);
+          setDocumentsInitialTab('search');
           setPageStack(['home', 'documents']);
         }}
       />

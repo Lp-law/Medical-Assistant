@@ -23,10 +23,11 @@ const formatDate = (value?: string | null): string => {
 type Props = {
   initialQuery?: string;
   initialCategoryName?: string;
+  initialTab?: 'search' | 'upload';
   autoSearchOnMount?: boolean;
 };
 
-const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, autoSearchOnMount = true }) => {
+const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, initialTab, autoSearchOnMount = true }) => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'search' | 'upload'>('search');
 
@@ -96,6 +97,12 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialCategoryName, categories]);
 
+  useEffect(() => {
+    if (!initialTab) return;
+    setActiveTab(initialTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTab]);
+
   const canSearch = useMemo(() => Boolean(q.trim() || categoryId || from || to), [q, categoryId, from, to]);
 
   const runSearch = async (override?: { q?: string; categoryId?: string }) => {
@@ -127,6 +134,7 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
 
     if (!nextQ && !nextCategoryName) return;
     if (!categories.length) return;
+    if (initialTab === 'upload') return;
 
     const nextCategoryId = nextCategoryName ? categories.find((c) => c.name === nextCategoryName)?.id : undefined;
 
@@ -137,7 +145,7 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
     // Run immediately with overrides to avoid state timing issues.
     runSearch({ q: nextQ, categoryId: nextCategoryId });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSearchOnMount, initialQuery, initialCategoryName, categories]);
+  }, [autoSearchOnMount, initialQuery, initialCategoryName, initialTab, categories]);
 
   const QUICK_CATEGORY_LABELS = useMemo(
     () => (['פסקי דין', 'תחשיבי נזק', 'חוות דעת', 'סיכומים'] as const),

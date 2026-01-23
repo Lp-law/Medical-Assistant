@@ -206,4 +206,120 @@
   .loader-inline__icon {
     @apply h-4 w-4 animate-spin text-gold;
   }
+
+  /* Bot launcher gentle float to draw attention */
+  .animate-bot-float {
+    animation: bot-float 2.2s ease-in-out infinite;
+  }
+
+  /* Cute bot mascot + speech bubble */
+  .bot-bubble {
+    @apply relative rounded-2xl border border-pearl bg-white px-3 py-2 shadow-card-xl;
+  }
+
+  .bot-bubble::after {
+    content: '';
+    position: absolute;
+    right: -6px;
+    top: 14px;
+    width: 10px;
+    height: 10px;
+    background: white;
+    border-right: 1px solid rgb(231 233 236);
+    border-bottom: 1px solid rgb(231 233 236);
+    transform: rotate(-45deg);
+  }
+
+  .bot-mascot {
+    @apply relative inline-flex flex-col items-center;
+    width: 34px;
+    height: 34px;
+  }
+
+  .bot-mascot__head {
+    @apply relative rounded-full border border-pearl bg-pearl/60;
+    width: 34px;
+    height: 34px;
+  }
+
+  .bot-mascot__eye {
+    @apply absolute rounded-full bg-navy;
+    width: 4px;
+    height: 4px;
+    top: 12px;
+  }
+
+  .bot-mascot__eye--left {
+    right: 11px;
+  }
+
+  .bot-mascot__eye--right {
+    right: 19px;
+  }
+
+  .bot-mascot__mouth {
+    @apply absolute bg-gold rounded-full;
+    height: 2px;
+    width: 10px;
+    right: 12px;
+    top: 20px;
+  }
+
+  .bot-mascot__legs {
+    @apply absolute flex items-center justify-center gap-2;
+    bottom: -6px;
+    right: 6px;
+  }
+
+  .bot-mascot__leg {
+    @apply bg-navy rounded-full;
+    width: 4px;
+    height: 8px;
+  }
+
+  .bot-mascot--idle .bot-mascot__head {
+    animation: bot-bob 1.6s ease-in-out infinite;
+  }
+
+  .bot-mascot--walk .bot-mascot__head {
+    animation: bot-bob 0.9s ease-in-out infinite;
+  }
+
+  .bot-mascot--walk .bot-mascot__leg--left {
+    animation: bot-walk-leg 0.35s ease-in-out infinite;
+  }
+
+  .bot-mascot--walk .bot-mascot__leg--right {
+    animation: bot-walk-leg 0.35s ease-in-out infinite reverse;
+  }
+}
+
+@keyframes bot-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes bot-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes bot-walk-leg {
+  0%,
+  100% {
+    transform: rotate(8deg);
+  }
+  50% {
+    transform: rotate(-8deg);
+  }
 }

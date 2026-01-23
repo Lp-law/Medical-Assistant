@@ -4,6 +4,29 @@ import { assistantSearch, AssistantDocumentHit } from '../services/assistantApi'
 
 type Props = {
   onOpenDocumentsWithQuery: (query: string, categoryName?: string) => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+};
+
+const BotMascot: React.FC<{ loading: boolean; label: string }> = ({ loading, label }) => {
+  return (
+    <div className="inline-flex items-center gap-3">
+      <div className={`bot-mascot ${loading ? 'bot-mascot--walk' : 'bot-mascot--idle'}`} aria-hidden="true">
+        <div className="bot-mascot__head">
+          <div className="bot-mascot__eye bot-mascot__eye--left" />
+          <div className="bot-mascot__eye bot-mascot__eye--right" />
+          <div className="bot-mascot__mouth" />
+        </div>
+        <div className="bot-mascot__legs">
+          <div className="bot-mascot__leg bot-mascot__leg--left" />
+          <div className="bot-mascot__leg bot-mascot__leg--right" />
+        </div>
+      </div>
+      <div className="bot-bubble">
+        <span className="text-xs font-semibold text-navy">{label}</span>
+      </div>
+    </div>
+  );
 };
 
 const formatDate = (iso?: string): string => {
@@ -33,13 +56,19 @@ type ChatTurn =
       limit: number;
     };
 
-const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery }) => {
-  const [open, setOpen] = useState(false);
+const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: controlledOpen, onOpenChange }) => {
+  const [internalOpen, setInternalOpen] = useState(false);
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [categoryKey, setCategoryKey] = useState<BotCategoryKey>('all');
   const [history, setHistory] = useState<ChatTurn[]>([]);
+
+  const isOpen = controlledOpen ?? internalOpen;
+  const setOpen = (next: boolean) => {
+    if (onOpenChange) onOpenChange(next);
+    else setInternalOpen(next);
+  };
 
   const canAsk = useMemo(() => question.trim().length >= 3 && !loading, [loading, question]);
 
@@ -99,20 +128,28 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery }) => {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-5 right-5 z-40 rounded-full bg-navy text-gold shadow-card-xl px-4 py-3 hover:bg-navy/90 transition inline-flex items-center gap-2"
+        className="fixed bottom-5 right-5 z-40 rounded-full bg-navy text-gold shadow-card-xl px-5 py-3 hover:bg-navy/90 transition inline-flex items-center gap-3 animate-bot-float"
         aria-label="פתח עוזר חיפוש"
       >
-        <Bot className="w-5 h-5 animate-pulse" />
-        <span className="text-sm font-semibold hidden md:inline">עוזר חיפוש</span>
+        <div className="hidden sm:block">
+          <BotMascot loading={loading} label={loading ? 'מחפש…' : 'צריך עזרה?'} />
+        </div>
+        <div className="sm:hidden inline-flex items-center gap-2">
+          <Bot className={`w-5 h-5 ${loading ? 'animate-spin' : 'animate-pulse'}`} />
+          <span className="text-sm font-semibold">עוזר</span>
+        </div>
       </button>
 
-      {open && (
+      {isOpen && (
         <div className="fixed inset-0 z-50 bg-black/30 flex items-end md:items-center justify-center p-4" dir="rtl">
           <div className="w-full max-w-2xl rounded-card bg-white shadow-card-xl border border-pearl overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-pearl">
-              <div>
-                <p className="text-sm font-semibold text-navy">עוזר חיפוש (AI)</p>
-                <p className="text-xs text-slate mt-1">שאל שאלה, ואקפיץ חיפושים ותוצאות ממאגר המסמכים.</p>
+              <div className="space-y-2">
+                <BotMascot
+                  loading={loading}
+                  label={loading ? 'אני מחפש במאגר המסמכים…' : 'שאל שאלה ואני אמצא מסמכים רלוונטיים'}
+                />
+                <p className="text-xs text-slate">אפשר גם לבחור קטגוריה כדי לצמצם תוצאות.</p>
               </div>
               <button
                 type="button"
