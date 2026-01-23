@@ -59,3 +59,24 @@ export const applyStorageGuard = (): void => {
   patchStorage('sessionStorage', window.sessionStorage);
 };
 
+// ---------------------------------------------------------------------------
+// Safe storage helpers (allowed by ESLint only in this file).
+// Note: Keys starting with "lexmedical_" are blocked by the guard (PHI policy).
+// Use a non-PHI prefix for harmless UI preferences/tools, e.g. "tool_" / "calc_".
+// ---------------------------------------------------------------------------
+
+export const storageGetItem = (key: string): string | null => {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(key);
+};
+
+export const storageSetItem = (key: string, value: string): void => {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(key, value);
+};
+
+export const storageRemoveItem = (key: string): void => {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(key);
+};
+

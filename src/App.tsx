@@ -19,8 +19,9 @@ import DocumentsLibrary from './components/DocumentsLibrary';
 import QuickUploadModal from './components/QuickUploadModal';
 import { runEmailIngestNow } from './services/adminApi';
 import BotAssistantWidget from './components/BotAssistantWidget';
+import DamagesCalculator from './components/DamagesCalculator';
 
-type Page = 'home' | 'documents';
+type Page = 'home' | 'documents' | 'calculator';
 
 type UploadCategoryKey = 'judgments' | 'damages' | 'opinions' | 'summaries';
 
@@ -114,7 +115,9 @@ const App: React.FC = () => {
 
         <ContextRibbon
           mode="מרכז ידע משרדי"
-          caseName={currentPage === 'documents' ? 'מסמכים וחיפוש' : 'דף הבית'}
+          caseName={
+            currentPage === 'documents' ? 'מסמכים וחיפוש' : currentPage === 'calculator' ? 'מחשבון נזק' : 'דף הבית'
+          }
           isReadOnly={false}
           onBack={canGoBack ? popPage : undefined}
         />
@@ -252,12 +255,36 @@ const App: React.FC = () => {
                     </button>
                   </div>
                 </SectionCard>
+
+                <SectionCard title="כלים" subtitle="חישוב מהיר בתוך המערכת">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => pushPage('calculator')}
+                      className="rounded-card border border-pearl bg-white p-5 text-right hover:shadow-card-xl transition"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-lg font-semibold text-navy">מחשבון נזק</p>
+                          <p className="text-xs text-slate mt-1">טבלת ראשי נזק עם תרחישי תובע/נתבע/ממוצע והפחתות.</p>
+                        </div>
+                        <Calculator className="w-6 h-6 text-gold" />
+                      </div>
+                    </button>
+                  </div>
+                </SectionCard>
               </>
             )}
 
             {currentPage === 'documents' && (
               <SectionCard title="מסמכים" subtitle="חיפוש, העלאה, תיוג">
                 <DocumentsLibrary initialQuery={homeSearch} initialCategoryName={homeCategoryName} autoSearchOnMount />
+              </SectionCard>
+            )}
+
+            {currentPage === 'calculator' && (
+              <SectionCard title="מחשבון נזק" subtitle="טבלה דינמית + שמירה מקומית">
+                <DamagesCalculator />
               </SectionCard>
             )}
           </div>
