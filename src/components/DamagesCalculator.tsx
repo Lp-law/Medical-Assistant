@@ -2,10 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Plus, Trash2, Upload, RotateCcw } from 'lucide-react';
 import { storageGetItem, storageSetItem } from '../utils/storageGuard';
 
+type HeadRowKind = 'add' | 'deduct';
+
 type HeadRow = {
   id: string;
   enabled: boolean;
   name: string;
+  kind: HeadRowKind; // add = תוספת, deduct = הפחתה (קיזוז)
   plaintiff: number; // ₪
   defendant: number; // ₪
 };
@@ -25,7 +28,7 @@ type DefendantShare = {
 };
 
 type Sheet = {
-  version: 2;
+  version: 3;
   title: string;
   rows: HeadRow[];
   contributoryNegligencePercent: number; // אשם תורם (%), applied first
@@ -35,6 +38,7 @@ type Sheet = {
 };
 
 // Must NOT start with "lexmedical_" (blocked by storageGuard as PHI).
+const STORAGE_KEY_V3 = 'calc_damages_v3';
 const STORAGE_KEY_V2 = 'calc_damages_v2';
 const STORAGE_KEY_V1 = 'calc_damages_v1';
 
@@ -52,16 +56,30 @@ const formatILS = (value: number): string => {
   return n.toLocaleString('he-IL', { maximumFractionDigits: 0 });
 };
 
+const normalizeHebrewKey = (value: string): string =>
+  (value ?? '')
+    .toString()
+    .replace(/[״"'`]/g, '')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+
+const inferRowKind = (name: string): HeadRowKind => {
+  const key = normalizeHebrewKey(name);
+  // מל"ל is a classic deduction line item
+  if (key.includes('מלל')) return 'deduct';
+  return 'add';
+};
+
 const DEFAULT_ROWS: HeadRow[] = [
-  { id: uid(), enabled: true, name: 'כאב וסבל', plaintiff: 900000, defendant: 800000 },
-  { id: uid(), enabled: true, name: 'עזרת צד ג׳', plaintiff: 5385000, defendant: 2444444 },
-  { id: uid(), enabled: true, name: 'הוצאות רפואיות', plaintiff: 850000, defendant: 150000 },
-  { id: uid(), enabled: true, name: 'אורתופד', plaintiff: 250000, defendant: 150000 },
-  { id: uid(), enabled: true, name: 'הפסדי שכר', plaintiff: 2400000, defendant: 2260848 },
-  { id: uid(), enabled: true, name: 'ניידות', plaintiff: 1100000, defendant: 600000 },
-  { id: uid(), enabled: true, name: 'התאמות דיור', plaintiff: 500000, defendant: 200000 },
-  { id: uid(), enabled: true, name: 'הוצאות עודפות בגין נסיעות לחו״ל', plaintiff: 250000, defendant: 0 },
-  { id: uid(), enabled: true, name: 'מל״ל', plaintiff: 3307021, defendant: 3307021 },
+  { id: uid(), enabled: true, name: 'כאב וסבל', kind: 'add', plaintiff: 0, defendant: 0 },
+  { id: uid(), enabled: true, name: 'עזרת צד ג׳', kind: 'add', plaintiff: 0, defendant: 0 },
+  { id: uid(), enabled: true, name: 'הוצאות רפואיות', kind: 'add', plaintiff: 0, defendant: 0 },
+  { id: uid(), enabled: true, name: 'אורתופד', kind: 'add', plaintiff: 0, defendant: 0 },
+  { id: uid(), enabled: true, name: 'הפסדי שכר', kind: 'add', plaintiff: 0, defendant: 0 },
+  { id: uid(), enabled: true, name: 'ניידות', kind: 'add', plaintiff: 0, defendant: 0 },
+  { id: uid(), enabled: true, name: 'התאמות דיור', kind: 'add', plaintiff: 0, defendant: 0 },
+  { id: uid(), enabled: true, name: 'הוצאות עודפות בגין נסיעות לחו״ל', kind: 'add', plaintiff: 0, defendant: 0 },
+  { id: uid(), enabled: true, name: 'מל״ל', kind: 'deduct', plaintiff: 0, defendant: 0 },
 ];
 
 const DEFAULT_REDUCTIONS: Reduction[] = [
@@ -73,7 +91,7 @@ const DEFAULT_DEFENDANTS: DefendantShare[] = [
 ];
 
 const defaultSheet = (): Sheet => ({
-  version: 2,
+  version: 3,
   title: 'מחשבון נזק',
   rows: DEFAULT_ROWS,
   contributoryNegligencePercent: 0,
@@ -104,20 +122,56 @@ const DamagesCalculator: React.FC = () => {
   const importRef = useRef<HTMLInputElement | null>(null);
   const [sheet, setSheet] = useState<Sheet>(() => {
     try {
-      // Prefer v2; if missing, try migrating from v1.
-      const raw = storageGetItem(STORAGE_KEY_V2) ?? storageGetItem(STORAGE_KEY_V1);
+      // Prefer v3; if missing, try migrating from v2/v1.
+      const raw = storageGetItem(STORAGE_KEY_V3) ?? storageGetItem(STORAGE_KEY_V2) ?? storageGetItem(STORAGE_KEY_V1);
       if (!raw) return defaultSheet();
-      const parsed = JSON.parse(raw) as Partial<Sheet>;
-      // v2
-      if (parsed.version === 2) {
+      const parsed = JSON.parse(raw) as any;
+      // v3
+      if ((parsed as any).version === 3) {
         return {
-          version: 2,
+          version: 3,
           title: String(parsed.title ?? 'מחשבון נזק'),
           rows: Array.isArray(parsed.rows)
             ? (parsed.rows as any[]).map((r) => ({
                 id: String(r.id ?? uid()),
                 enabled: Boolean(r.enabled ?? true),
                 name: String(r.name ?? ''),
+                kind: (r.kind === 'deduct' || r.kind === 'add') ? r.kind : inferRowKind(String(r.name ?? '')),
+                plaintiff: safeNumber(r.plaintiff),
+                defendant: safeNumber(r.defendant),
+              }))
+            : DEFAULT_ROWS,
+          contributoryNegligencePercent: clampPercent(safeNumber((parsed as any).contributoryNegligencePercent)),
+          reductions: Array.isArray((parsed as any).reductions)
+            ? ((parsed as any).reductions as any[]).map((r) => ({
+                id: String(r.id ?? uid()),
+                enabled: Boolean(r.enabled ?? true),
+                label: String(r.label ?? ''),
+                percent: clampPercent(safeNumber(r.percent)),
+              }))
+            : DEFAULT_REDUCTIONS,
+          defendants: Array.isArray((parsed as any).defendants)
+            ? ((parsed as any).defendants as any[]).map((d) => ({
+                id: String(d.id ?? uid()),
+                enabled: Boolean(d.enabled ?? true),
+                name: String(d.name ?? 'נתבע'),
+                percent: clampPercent(safeNumber(d.percent)),
+              }))
+            : DEFAULT_DEFENDANTS,
+          updatedAt: String(parsed.updatedAt ?? new Date().toISOString()),
+        };
+      }
+      // v2
+      if ((parsed as any).version === 2) {
+        return {
+          version: 3,
+          title: String(parsed.title ?? 'מחשבון נזק'),
+          rows: Array.isArray(parsed.rows)
+            ? (parsed.rows as any[]).map((r) => ({
+                id: String(r.id ?? uid()),
+                enabled: Boolean(r.enabled ?? true),
+                name: String(r.name ?? ''),
+                kind: inferRowKind(String(r.name ?? '')),
                 plaintiff: safeNumber(r.plaintiff),
                 defendant: safeNumber(r.defendant),
               }))
@@ -144,18 +198,19 @@ const DamagesCalculator: React.FC = () => {
       }
 
       // v1 migration
-      if (parsed.version === 1) {
+      if ((parsed as any).version === 1) {
         const v1Adjustments = Array.isArray((parsed as any).adjustments) ? ((parsed as any).adjustments as any[]) : [];
         const contributory = v1Adjustments.find((a) => String(a.label ?? '').includes('אשם'))?.percent ?? 0;
         const lossChance = v1Adjustments.find((a) => String(a.label ?? '').includes('סיכויי'))?.percent ?? 0;
         return {
-          version: 2,
+          version: 3,
           title: String(parsed.title ?? 'מחשבון נזק'),
           rows: Array.isArray(parsed.rows)
             ? (parsed.rows as any[]).map((r) => ({
                 id: String(r.id ?? uid()),
                 enabled: Boolean(r.enabled ?? true),
                 name: String(r.name ?? ''),
+                kind: inferRowKind(String(r.name ?? '')),
                 plaintiff: safeNumber(r.plaintiff),
                 defendant: safeNumber(r.defendant),
               }))
@@ -178,7 +233,7 @@ const DamagesCalculator: React.FC = () => {
   useEffect(() => {
     try {
       const next: Sheet = { ...sheet, updatedAt: new Date().toISOString() };
-      storageSetItem(STORAGE_KEY_V2, JSON.stringify(next));
+      storageSetItem(STORAGE_KEY_V3, JSON.stringify(next));
     } catch {
       // ignore
     }
@@ -188,18 +243,41 @@ const DamagesCalculator: React.FC = () => {
   const activeRows = useMemo(() => sheet.rows.filter((r) => r.enabled), [sheet.rows]);
 
   const totals = useMemo(() => {
-    const plaintiff = sum(activeRows.map((r) => r.plaintiff));
-    const defendant = sum(activeRows.map((r) => r.defendant));
-    const avg = sum(activeRows.map((r) => calcAvg(r.plaintiff, r.defendant)));
-    return { plaintiff, defendant, avg };
+    const addRows = activeRows.filter((r) => r.kind === 'add');
+    const deductRows = activeRows.filter((r) => r.kind === 'deduct');
+
+    const plaintiffAdd = sum(addRows.map((r) => r.plaintiff));
+    const defendantAdd = sum(addRows.map((r) => r.defendant));
+    const avgAdd = sum(addRows.map((r) => calcAvg(r.plaintiff, r.defendant)));
+
+    const plaintiffDeduct = sum(deductRows.map((r) => r.plaintiff));
+    const defendantDeduct = sum(deductRows.map((r) => r.defendant));
+    const avgDeduct = sum(deductRows.map((r) => calcAvg(r.plaintiff, r.defendant)));
+
+    const plaintiffNet = plaintiffAdd - plaintiffDeduct;
+    const defendantNet = defendantAdd - defendantDeduct;
+    const avgNet = avgAdd - avgDeduct;
+
+    return {
+      plaintiffAdd,
+      defendantAdd,
+      avgAdd,
+      plaintiffDeduct,
+      defendantDeduct,
+      avgDeduct,
+      plaintiffNet,
+      defendantNet,
+      avgNet,
+    };
   }, [activeRows]);
 
   const after = useMemo(() => {
-    const plaintiff = applyContribAndReductions(totals.plaintiff, sheet.contributoryNegligencePercent, sheet.reductions);
-    const defendant = applyContribAndReductions(totals.defendant, sheet.contributoryNegligencePercent, sheet.reductions);
-    const avg = applyContribAndReductions(totals.avg, sheet.contributoryNegligencePercent, sheet.reductions);
+    // Apply reductions on the NET total (after deductions like מל"ל).
+    const plaintiff = applyContribAndReductions(totals.plaintiffNet, sheet.contributoryNegligencePercent, sheet.reductions);
+    const defendant = applyContribAndReductions(totals.defendantNet, sheet.contributoryNegligencePercent, sheet.reductions);
+    const avg = applyContribAndReductions(totals.avgNet, sheet.contributoryNegligencePercent, sheet.reductions);
     return { plaintiff, defendant, avg };
-  }, [sheet.contributoryNegligencePercent, sheet.reductions, totals.avg, totals.defendant, totals.plaintiff]);
+  }, [sheet.contributoryNegligencePercent, sheet.reductions, totals.avgNet, totals.defendantNet, totals.plaintiffNet]);
 
   const updateRow = (id: string, patch: Partial<HeadRow>) => {
     setSheet((prev) => ({
@@ -215,7 +293,7 @@ const DamagesCalculator: React.FC = () => {
       ...prev,
       rows: [
         ...prev.rows,
-        { id: uid(), enabled: true, name: 'ראש נזק חדש', plaintiff: 0, defendant: 0 },
+        { id: uid(), enabled: true, name: 'ראש נזק חדש', kind: 'add', plaintiff: 0, defendant: 0 },
       ],
     }));
 
@@ -235,7 +313,8 @@ const DamagesCalculator: React.FC = () => {
       reductions: [...prev.reductions, { id: uid(), enabled: true, label: 'הפחתה נוספת (%)', percent: 0 }],
     }));
 
-  const reset = () => setSheet(defaultSheet());
+  // Reset: restore the original head list and set all values to 0 (including reductions/defendants).
+  const reset = () => setSheet((prev) => ({ ...defaultSheet(), title: prev.title }));
 
   const exportJson = () => {
     const payload: Sheet = { ...sheet, updatedAt: new Date().toISOString() };
@@ -248,19 +327,70 @@ const DamagesCalculator: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const exportCsv = () => {
+    const quote = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines: string[] = [];
+    lines.push([quote('כותרת'), quote(sheet.title), quote('עודכן'), quote(new Date().toISOString())].join(','));
+    lines.push('');
+    lines.push([quote('כלול'), quote('סוג'), quote('ראש נזק'), quote('טענות תובע'), quote('טענות נתבע'), quote('ממוצע')].join(','));
+    for (const r of sheet.rows) {
+      const avg = calcAvg(r.plaintiff, r.defendant);
+      lines.push(
+        [
+          quote(r.enabled ? 'כן' : 'לא'),
+          quote(r.kind === 'deduct' ? 'הפחתה' : 'תוספת'),
+          quote(r.name),
+          quote(safeNumber(r.plaintiff)),
+          quote(safeNumber(r.defendant)),
+          quote(avg),
+        ].join(','),
+      );
+    }
+    lines.push('');
+    lines.push([quote('סה״כ ראשי נזק'), quote(totals.plaintiffAdd), quote(totals.defendantAdd), quote(totals.avgAdd)].join(','));
+    lines.push([quote('קיזוזים (למשל מל״ל)'), quote(totals.plaintiffDeduct), quote(totals.defendantDeduct), quote(totals.avgDeduct)].join(','));
+    lines.push([quote('סה״כ נטו'), quote(totals.plaintiffNet), quote(totals.defendantNet), quote(totals.avgNet)].join(','));
+    lines.push('');
+    lines.push([quote('אשם תורם (%)'), quote(sheet.contributoryNegligencePercent)].join(','));
+    for (const r of sheet.reductions) {
+      lines.push([quote(r.enabled ? 'הפחתה פעילה' : 'הפחתה לא פעילה'), quote(r.label), quote(r.percent)].join(','));
+    }
+    lines.push('');
+    lines.push([quote('סה״כ לאחר הפחתות'), quote(after.plaintiff.afterAll), quote(after.defendant.afterAll), quote(after.avg.afterAll)].join(','));
+    lines.push('');
+    lines.push([quote('חלוקת נתבעים'), quote('נתבע'), quote('%'), quote('תובע'), quote('נתבע'), quote('ממוצע')].join(','));
+    for (const d of sheet.defendants) {
+      const pAmt = after.plaintiff.afterAll * (clampPercent(d.percent) / 100);
+      const dAmt = after.defendant.afterAll * (clampPercent(d.percent) / 100);
+      const aAmt = after.avg.afterAll * (clampPercent(d.percent) / 100);
+      lines.push([quote(d.enabled ? 'כן' : 'לא'), quote(d.name), quote(d.percent), quote(pAmt), quote(dAmt), quote(aAmt)].join(','));
+    }
+
+    // UTF-8 BOM so Excel opens Hebrew correctly.
+    const csv = '\uFEFF' + lines.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `damages-calculator-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const importJson = async (file: File) => {
     const text = await file.text();
-    const parsed = JSON.parse(text) as Partial<Sheet>;
-    // Support v2 import, and v1 import (migrated).
-    if (parsed.version === 2) {
+    const parsed = JSON.parse(text) as any;
+    // Support v3 import, and v2/v1 import (migrated).
+    if ((parsed as any).version === 3) {
       setSheet({
-        version: 2,
+        version: 3,
         title: String(parsed.title ?? 'מחשבון נזק'),
         rows: Array.isArray(parsed.rows)
           ? (parsed.rows as any[]).map((r) => ({
               id: String(r.id ?? uid()),
               enabled: Boolean(r.enabled ?? true),
               name: String(r.name ?? ''),
+              kind: (r.kind === 'deduct' || r.kind === 'add') ? r.kind : inferRowKind(String(r.name ?? '')),
               plaintiff: safeNumber(r.plaintiff),
               defendant: safeNumber(r.defendant),
             }))
@@ -286,18 +416,55 @@ const DamagesCalculator: React.FC = () => {
       });
       return;
     }
-    if (parsed.version === 1) {
-      const v1Adjustments = Array.isArray((parsed as any).adjustments) ? ((parsed as any).adjustments as any[]) : [];
-      const contributory = v1Adjustments.find((a) => String(a.label ?? '').includes('אשם'))?.percent ?? 0;
-      const lossChance = v1Adjustments.find((a) => String(a.label ?? '').includes('סיכויי'))?.percent ?? 0;
+
+    if ((parsed as any).version === 2) {
       setSheet({
-        version: 2,
+        version: 3,
         title: String(parsed.title ?? 'מחשבון נזק'),
         rows: Array.isArray(parsed.rows)
           ? (parsed.rows as any[]).map((r) => ({
               id: String(r.id ?? uid()),
               enabled: Boolean(r.enabled ?? true),
               name: String(r.name ?? ''),
+              kind: inferRowKind(String(r.name ?? '')),
+              plaintiff: safeNumber(r.plaintiff),
+              defendant: safeNumber(r.defendant),
+            }))
+          : [],
+        contributoryNegligencePercent: clampPercent(safeNumber((parsed as any).contributoryNegligencePercent)),
+        reductions: Array.isArray((parsed as any).reductions)
+          ? ((parsed as any).reductions as any[]).map((r) => ({
+              id: String(r.id ?? uid()),
+              enabled: Boolean(r.enabled ?? true),
+              label: String(r.label ?? ''),
+              percent: clampPercent(safeNumber(r.percent)),
+            }))
+          : [],
+        defendants: Array.isArray((parsed as any).defendants)
+          ? ((parsed as any).defendants as any[]).map((d) => ({
+              id: String(d.id ?? uid()),
+              enabled: Boolean(d.enabled ?? true),
+              name: String(d.name ?? 'נתבע'),
+              percent: clampPercent(safeNumber(d.percent)),
+            }))
+          : DEFAULT_DEFENDANTS,
+        updatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+    if ((parsed as any).version === 1) {
+      const v1Adjustments = Array.isArray((parsed as any).adjustments) ? ((parsed as any).adjustments as any[]) : [];
+      const contributory = v1Adjustments.find((a) => String(a.label ?? '').includes('אשם'))?.percent ?? 0;
+      const lossChance = v1Adjustments.find((a) => String(a.label ?? '').includes('סיכויי'))?.percent ?? 0;
+      setSheet({
+        version: 3,
+        title: String(parsed.title ?? 'מחשבון נזק'),
+        rows: Array.isArray(parsed.rows)
+          ? (parsed.rows as any[]).map((r) => ({
+              id: String(r.id ?? uid()),
+              enabled: Boolean(r.enabled ?? true),
+              name: String(r.name ?? ''),
+              kind: inferRowKind(String(r.name ?? '')),
               plaintiff: safeNumber(r.plaintiff),
               defendant: safeNumber(r.defendant),
             }))
@@ -372,6 +539,10 @@ const DamagesCalculator: React.FC = () => {
             <Upload className="w-4 h-4" />
             ייבוא JSON
           </button>
+          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={exportCsv}>
+            <Download className="w-4 h-4" />
+            ייצוא אקסל (CSV)
+          </button>
           <button type="button" className="btn-outline text-sm px-4 py-2" onClick={exportJson}>
             <Download className="w-4 h-4" />
             ייצוא JSON
@@ -422,6 +593,7 @@ const DamagesCalculator: React.FC = () => {
               <thead>
                 <tr className="text-slate-light">
                   <th className="text-right px-3 py-2 border-b border-pearl">כלול</th>
+                  <th className="text-right px-3 py-2 border-b border-pearl">סוג</th>
                   <th className="text-right px-3 py-2 border-b border-pearl">ראש נזק</th>
                   <th className="text-right px-3 py-2 border-b border-pearl">טענות תובע (₪)</th>
                   <th className="text-right px-3 py-2 border-b border-pearl">טענות נתבע (₪)</th>
@@ -440,6 +612,17 @@ const DamagesCalculator: React.FC = () => {
                           checked={r.enabled}
                           onChange={(e) => updateRow(r.id, { enabled: e.target.checked })}
                         />
+                      </td>
+                      <td className="px-3 py-2 border-b border-pearl">
+                        <select
+                          className="w-28 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                          value={r.kind}
+                          onChange={(e) => updateRow(r.id, { kind: (e.target.value as HeadRowKind) ?? 'add' })}
+                          title="תוספת/הפחתה"
+                        >
+                          <option value="add">תוספת</option>
+                          <option value="deduct">הפחתה</option>
+                        </select>
                       </td>
                       <td className="px-3 py-2 border-b border-pearl">
                         <input
@@ -486,10 +669,29 @@ const DamagesCalculator: React.FC = () => {
               <tfoot>
                 <tr>
                   <td className="px-3 py-3" />
-                  <td className="px-3 py-3 font-semibold">סה״כ</td>
-                  <td className="px-3 py-3 font-semibold">{formatILS(totals.plaintiff)}</td>
-                  <td className="px-3 py-3 font-semibold">{formatILS(totals.defendant)}</td>
-                  <td className="px-3 py-3 font-semibold">{formatILS(totals.avg)}</td>
+                  <td className="px-3 py-3" />
+                  <td className="px-3 py-3 font-semibold">סה״כ ראשי נזק</td>
+                  <td className="px-3 py-3 font-semibold">{formatILS(totals.plaintiffAdd)}</td>
+                  <td className="px-3 py-3 font-semibold">{formatILS(totals.defendantAdd)}</td>
+                  <td className="px-3 py-3 font-semibold">{formatILS(totals.avgAdd)}</td>
+                  <td className="px-3 py-3" />
+                </tr>
+                <tr>
+                  <td className="px-3 py-3" />
+                  <td className="px-3 py-3" />
+                  <td className="px-3 py-3 font-semibold text-slate">קיזוזים (למשל מל״ל)</td>
+                  <td className="px-3 py-3 font-semibold text-slate">{formatILS(totals.plaintiffDeduct)}</td>
+                  <td className="px-3 py-3 font-semibold text-slate">{formatILS(totals.defendantDeduct)}</td>
+                  <td className="px-3 py-3 font-semibold text-slate">{formatILS(totals.avgDeduct)}</td>
+                  <td className="px-3 py-3" />
+                </tr>
+                <tr>
+                  <td className="px-3 py-3" />
+                  <td className="px-3 py-3" />
+                  <td className="px-3 py-3 font-semibold">סה״כ נטו</td>
+                  <td className="px-3 py-3 font-semibold">{formatILS(totals.plaintiffNet)}</td>
+                  <td className="px-3 py-3 font-semibold">{formatILS(totals.defendantNet)}</td>
+                  <td className="px-3 py-3 font-semibold">{formatILS(totals.avgNet)}</td>
                   <td className="px-3 py-3" />
                 </tr>
               </tfoot>
@@ -581,7 +783,7 @@ const DamagesCalculator: React.FC = () => {
                 <span className="badge-strong">₪ {formatILS(after.plaintiff.afterAll)}</span>
               </div>
               <p className="text-xs text-slate-light mt-1">
-                לפני: ₪ {formatILS(totals.plaintiff)} · אחרי אשם תורם: ₪ {formatILS(after.plaintiff.afterContrib)} · פקטור הפחתות: {after.plaintiff.reductionsFactor.toFixed(3)}
+                נטו לפני: ₪ {formatILS(totals.plaintiffNet)} · אחרי אשם תורם: ₪ {formatILS(after.plaintiff.afterContrib)} · פקטור הפחתות: {after.plaintiff.reductionsFactor.toFixed(3)}
               </p>
             </div>
             <div className="mini-card">
@@ -590,7 +792,7 @@ const DamagesCalculator: React.FC = () => {
                 <span className="badge-muted">₪ {formatILS(after.defendant.afterAll)}</span>
               </div>
               <p className="text-xs text-slate-light mt-1">
-                לפני: ₪ {formatILS(totals.defendant)} · אחרי אשם תורם: ₪ {formatILS(after.defendant.afterContrib)} · פקטור הפחתות: {after.defendant.reductionsFactor.toFixed(3)}
+                נטו לפני: ₪ {formatILS(totals.defendantNet)} · אחרי אשם תורם: ₪ {formatILS(after.defendant.afterContrib)} · פקטור הפחתות: {after.defendant.reductionsFactor.toFixed(3)}
               </p>
             </div>
             <div className="mini-card">
@@ -599,7 +801,7 @@ const DamagesCalculator: React.FC = () => {
                 <span className="badge-warning">₪ {formatILS(after.avg.afterAll)}</span>
               </div>
               <p className="text-xs text-slate-light mt-1">
-                לפני: ₪ {formatILS(totals.avg)} · אחרי אשם תורם: ₪ {formatILS(after.avg.afterContrib)} · פקטור הפחתות: {after.avg.reductionsFactor.toFixed(3)}
+                נטו לפני: ₪ {formatILS(totals.avgNet)} · אחרי אשם תורם: ₪ {formatILS(after.avg.afterContrib)} · פקטור הפחתות: {after.avg.reductionsFactor.toFixed(3)}
               </p>
             </div>
           </div>
