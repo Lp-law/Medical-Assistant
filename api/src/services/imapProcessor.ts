@@ -73,6 +73,23 @@ export const runImapIngestionCycle = async (): Promise<ImapCycleResult> => {
     logger: false,
   });
 
+  // imapflow emits 'error' events on the client; without a listener Node will crash the process.
+  // Capture and log these errors, and let the request fail gracefully.
+  let lastClientError: any = null;
+  client.on('error', (err) => {
+    lastClientError = err;
+    console.error('[imap] client error event', {
+      mailbox,
+      errorName: err?.name,
+      errorMessage: err?.message,
+      errorCode: err?.code,
+      response: err?.response,
+      responseText: err?.responseText,
+      executedCommand: err?.executedCommand,
+      authenticationFailed: err?.authenticationFailed,
+    });
+  });
+
   let fetched = 0;
   let processed = 0;
   let skipped = 0;
@@ -89,8 +106,17 @@ export const runImapIngestionCycle = async (): Promise<ImapCycleResult> => {
       errorName: error?.name,
       errorMessage: error?.message,
       errorCode: error?.code,
+      response: error?.response,
+      responseText: error?.responseText,
+      executedCommand: error?.executedCommand,
+      authenticationFailed: error?.authenticationFailed,
     });
-    const e = new Error('imap_connect_failed');
+    const authFailed =
+      error?.authenticationFailed === true ||
+      String(error?.responseText ?? '').toLowerCase().includes('authenticate failed') ||
+      String(error?.response ?? '').toLowerCase().includes('authenticate failed');
+
+    const e = new Error(authFailed ? 'imap_auth_failed' : 'imap_connect_failed');
     (e as any).cause = error;
     throw e;
   }
