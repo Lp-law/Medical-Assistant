@@ -44,11 +44,11 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery }) => {
   const canAsk = useMemo(() => question.trim().length >= 3 && !loading, [loading, question]);
 
   const ask = async (override?: { question?: string; limit?: number }) => {
-    if (!canAsk) return;
+    const q = (override?.question ?? question).trim();
+    if (q.length < 3 || loading) return;
     setLoading(true);
     setError(null);
     try {
-      const q = (override?.question ?? question).trim();
       const limit = override?.limit ?? 10;
       const categoryName = categoryKey === 'all' ? undefined : CATEGORY_NAME[categoryKey];
 
@@ -99,7 +99,7 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery }) => {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-5 left-5 z-40 rounded-full bg-navy text-gold shadow-card-xl px-4 py-3 hover:bg-navy/90 transition inline-flex items-center gap-2"
+        className="fixed bottom-5 right-5 z-40 rounded-full bg-navy text-gold shadow-card-xl px-4 py-3 hover:bg-navy/90 transition inline-flex items-center gap-2"
         aria-label="פתח עוזר חיפוש"
       >
         <Bot className="w-5 h-5 animate-pulse" />

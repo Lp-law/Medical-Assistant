@@ -18,11 +18,10 @@ interface Props {
 
 const ContextRibbon: React.FC<Props> = ({ mode, caseName, status, isReadOnly, onBack }) => {
   const handleBack = () => {
-    if (onBack) {
-      onBack();
-      return;
-    }
-    window.history.back();
+    // If no callback is provided, we don't want to unexpectedly navigate away from the SPA.
+    // In this app we pass onBack whenever there is a meaningful in-app "back".
+    if (!onBack) return;
+    onBack();
   };
 
   return (
@@ -37,10 +36,16 @@ const ContextRibbon: React.FC<Props> = ({ mode, caseName, status, isReadOnly, on
         )}
         {status && <span className="badge-status bg-gold/15 text-navy">{statusLabel[status] ?? status}</span>}
       </div>
-      <button type="button" onClick={handleBack} className="inline-flex items-center gap-2 text-xs text-gold hover:text-gold-light transition">
-        <ArrowRight className="w-4 h-4" />
-        חזרה למסך הקודם
-      </button>
+      {onBack && (
+        <button
+          type="button"
+          onClick={handleBack}
+          className="inline-flex items-center gap-2 text-xs text-gold hover:text-gold-light transition"
+        >
+          <ArrowRight className="w-4 h-4" />
+          חזרה למסך הקודם
+        </button>
+      )}
     </div>
   );
 };

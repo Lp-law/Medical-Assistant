@@ -37,7 +37,6 @@ const App: React.FC = () => {
   const isAdmin = user?.role === 'admin';
   const [pageStack, setPageStack] = useState<Page[]>(['home']);
   const [uploadCategory, setUploadCategory] = useState<UploadCategoryKey | null>(null);
-  const [assistantOpen, setAssistantOpen] = useState(false);
   const [homeSearch, setHomeSearch] = useState('');
   const [homeCategoryName, setHomeCategoryName] = useState<string | undefined>(undefined);
   const [homeIngestLoading, setHomeIngestLoading] = useState(false);
@@ -46,7 +45,6 @@ const App: React.FC = () => {
   const handleLogout = () => {
     logout();
     setPageStack(['home']);
-    setAssistantOpen(false);
   };
 
   const SectionCard: React.FC<{ title: string; subtitle?: string; children: ReactNode }> = ({
@@ -158,14 +156,10 @@ const App: React.FC = () => {
                         <p className="text-sm font-semibold text-navy">עוזר חיפוש (AI)</p>
                         <p className="text-xs text-slate mt-1">בקרוב: בוט שמציע חיפושים ותוצאות בתוך המערכת.</p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setAssistantOpen((v) => !v)}
-                        className="rounded-full border border-gold text-gold px-4 py-2 text-sm font-semibold hover:bg-gold/10 transition inline-flex items-center gap-2"
-                      >
-                        <Bot className="w-4 h-4" />
-                        {assistantOpen ? 'סגור' : 'פתח'}
-                      </button>
+                      <div className="rounded-full border border-pearl text-slate px-4 py-2 text-sm font-semibold inline-flex items-center gap-2">
+                        <Bot className="w-4 h-4 text-gold" />
+                        פתח דרך כפתור הבוט הצף
+                      </div>
                     </div>
                   </div>
 
