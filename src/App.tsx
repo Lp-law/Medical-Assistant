@@ -19,6 +19,7 @@ import LegalDisclaimer from './components/LegalDisclaimer';
 import DocumentsLibrary from './components/DocumentsLibrary';
 import QuickUploadModal from './components/QuickUploadModal';
 import { runEmailIngestNow } from './services/adminApi';
+import BotAssistantWidget from './components/BotAssistantWidget';
 
 type Page = 'home' | 'documents';
 
@@ -276,6 +277,13 @@ const App: React.FC = () => {
         categoryName={uploadCategory ? CATEGORY_NAME[uploadCategory] : ''}
         onClose={() => setUploadCategory(null)}
         onUploaded={() => undefined}
+      />
+
+      <BotAssistantWidget
+        onOpenDocumentsWithQuery={(q) => {
+          setHomeSearch(q);
+          setPageStack(['home', 'documents']);
+        }}
       />
     </div>
   );

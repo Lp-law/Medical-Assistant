@@ -14,6 +14,7 @@ import { config } from './services/env';
 import { documentsRouter } from './routes/documents';
 import { categoriesRouter } from './routes/categories';
 import { adminRouter } from './routes/admin';
+import { assistantRouter } from './routes/assistant';
 
 const app = express();
 
@@ -56,6 +57,7 @@ app.use('/api/notifications', requireDatabase, notificationsRouter);
 app.use('/api/documents', requireDatabase, documentsRouter);
 app.use('/api/categories', requireDatabase, categoriesRouter);
 app.use('/api/admin', requireDatabase, adminRouter);
+app.use('/api/assistant', requireDatabase, assistantRouter);
 
 const port = config.port;
 app.listen(port, () => {
