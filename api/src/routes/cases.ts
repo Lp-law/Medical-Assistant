@@ -38,9 +38,9 @@ const exportSchema = z.object({
 router.use(requireAuth);
 
 const toDbErrorResponse = (error: unknown): { status: number; body: Record<string, unknown> } | null => {
-  const code = (error as any)?.code;
+  const code = (error as any)?.code ?? (error as any)?.errorCode;
   // Prisma errors typically expose a string code like "P1001", "P2021", etc.
-  if (typeof code === 'string' && /^P\\d{4}$/.test(code)) {
+  if (typeof code === 'string' && /^P\d{4}$/.test(code)) {
     return {
       // "Service Unavailable" is more accurate for DB connectivity / schema-not-ready cases
       status: 503,
