@@ -57,6 +57,16 @@ adminRouter.post('/email-ingest-now', requireAdmin, async (_req, res) => {
       });
       return;
     }
+    if (message === 'imap_connect_failed' || message === 'imap_mailbox_open_failed') {
+      res.status(400).json({
+        processedMessages: 0,
+        documentsCreated: 0,
+        lastUid: 0,
+        success: false,
+        error: message,
+      });
+      return;
+    }
     res.status(500).json({
       processedMessages: 0,
       documentsCreated: 0,

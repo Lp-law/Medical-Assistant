@@ -78,9 +78,36 @@ export const runImapIngestionCycle = async (): Promise<ImapCycleResult> => {
   let skipped = 0;
   let maxUid = state.lastUid ?? BigInt(0);
 
-  await client.connect();
   try {
-    await client.mailboxOpen(mailbox);
+    await client.connect();
+  } catch (error: any) {
+    console.error('[imap] connect failed', {
+      host: config.imap.host,
+      port: config.imap.port,
+      secure: config.imap.secure,
+      mailbox,
+      errorName: error?.name,
+      errorMessage: error?.message,
+      errorCode: error?.code,
+    });
+    const e = new Error('imap_connect_failed');
+    (e as any).cause = error;
+    throw e;
+  }
+  try {
+    try {
+      await client.mailboxOpen(mailbox);
+    } catch (error: any) {
+      console.error('[imap] mailboxOpen failed', {
+        mailbox,
+        errorName: error?.name,
+        errorMessage: error?.message,
+        errorCode: error?.code,
+      });
+      const e = new Error('imap_mailbox_open_failed');
+      (e as any).cause = error;
+      throw e;
+    }
 
     // Default category for incoming judgments
     const defaultCategory = await prisma.category.upsert({
