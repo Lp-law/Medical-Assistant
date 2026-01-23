@@ -37,6 +37,19 @@ const exportSchema = z.object({
 
 router.use(requireAuth);
 
+const toDbErrorResponse = (error: unknown): { status: number; body: Record<string, unknown> } | null => {
+  const code = (error as any)?.code;
+  // Prisma errors typically expose a string code like "P1001", "P2021", etc.
+  if (typeof code === 'string' && /^P\\d{4}$/.test(code)) {
+    return {
+      // "Service Unavailable" is more accurate for DB connectivity / schema-not-ready cases
+      status: 503,
+      body: { error: 'db_error', code },
+    };
+  }
+  return null;
+};
+
 const ensureOwner = async (caseId: string, userId: string) => {
   const record = await prisma.case.findFirst({ where: { id: caseId, ownerId: userId } });
   if (!record) {
@@ -64,6 +77,11 @@ router.get('/', async (req, res) => {
     res.json({ ownCases, otherCases });
   } catch (error) {
     console.warn('[cases] failed to fetch cases', error);
+    const dbError = toDbErrorResponse(error);
+    if (dbError) {
+      res.status(dbError.status).json(dbError.body);
+      return;
+    }
     res.status(500).json({ error: 'internal_error' });
   }
 });
@@ -102,6 +120,11 @@ router.post('/', async (req, res) => {
     res.status(201).json({ case: buildOwnerCaseResponse(created, req.user!.id) });
   } catch (error) {
     console.warn('[cases] failed to create case', error);
+    const dbError = toDbErrorResponse(error);
+    if (dbError) {
+      res.status(dbError.status).json(dbError.body);
+      return;
+    }
     res.status(500).json({ error: 'internal_error' });
   }
 });
