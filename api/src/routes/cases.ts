@@ -38,8 +38,15 @@ const exportSchema = z.object({
 router.use(requireAuth);
 
 const toDbErrorResponse = (error: unknown): { status: number; body: Record<string, unknown> } | null => {
-  const code = (error as any)?.code ?? (error as any)?.errorCode;
-  // Prisma errors typically expose a string code like "P1001", "P2021", etc.
+  // Prisma errors can be:
+  // - Prisma.PrismaClientKnownRequestError (has .code like "P2021")
+  // - Prisma.PrismaClientInitializationError (no .code, but clearly DB-related)
+  // - Prisma.PrismaClientRustPanicError / UnknownRequestError / ValidationError
+  const anyErr = error as any;
+  const code = anyErr?.code ?? anyErr?.errorCode;
+  const name = typeof anyErr?.name === 'string' ? anyErr.name : undefined;
+
+  // Known request errors: codes like "P1001", "P2021", etc.
   if (typeof code === 'string' && /^P\d{4}$/.test(code)) {
     return {
       // "Service Unavailable" is more accurate for DB connectivity / schema-not-ready cases
@@ -47,6 +54,20 @@ const toDbErrorResponse = (error: unknown): { status: number; body: Record<strin
       body: { error: 'db_error', code },
     };
   }
+
+  // Any Prisma client error: treat as DB error and surface the type (safe).
+  if (
+    error instanceof Prisma.PrismaClientInitializationError ||
+    error instanceof Prisma.PrismaClientRustPanicError ||
+    error instanceof Prisma.PrismaClientUnknownRequestError ||
+    error instanceof Prisma.PrismaClientValidationError
+  ) {
+    return {
+      status: 503,
+      body: { error: 'db_error', kind: name ?? 'PrismaClientError' },
+    };
+  }
+
   return null;
 };
 

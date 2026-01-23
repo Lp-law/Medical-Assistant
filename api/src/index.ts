@@ -40,7 +40,11 @@ const requireDatabase: express.RequestHandler = (req, res, next) => {
 };
 
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    commit: process.env.RENDER_GIT_COMMIT ?? null,
+  });
 });
 
 app.use('/api/auth', authRouter);
