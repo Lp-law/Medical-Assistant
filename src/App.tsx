@@ -39,6 +39,7 @@ const App: React.FC = () => {
   const [uploadCategory, setUploadCategory] = useState<UploadCategoryKey | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [homeSearch, setHomeSearch] = useState('');
+  const [homeCategoryName, setHomeCategoryName] = useState<string | undefined>(undefined);
   const [homeIngestLoading, setHomeIngestLoading] = useState(false);
   const [homeIngestResult, setHomeIngestResult] = useState<string | null>(null);
 
@@ -264,7 +265,7 @@ const App: React.FC = () => {
 
             {currentPage === 'documents' && (
               <SectionCard title="מסמכים" subtitle="חיפוש, העלאה, תיוג">
-                <DocumentsLibrary initialQuery={homeSearch} autoSearchOnMount />
+                <DocumentsLibrary initialQuery={homeSearch} initialCategoryName={homeCategoryName} autoSearchOnMount />
               </SectionCard>
             )}
           </div>
@@ -280,8 +281,9 @@ const App: React.FC = () => {
       />
 
       <BotAssistantWidget
-        onOpenDocumentsWithQuery={(q) => {
+        onOpenDocumentsWithQuery={(q, categoryName) => {
           setHomeSearch(q);
+          setHomeCategoryName(categoryName);
           setPageStack(['home', 'documents']);
         }}
       />

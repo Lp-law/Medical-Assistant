@@ -15,11 +15,18 @@ export type AssistantSearchResponse = {
   documents: AssistantDocumentHit[];
 };
 
-export const assistantSearch = async (question: string, limit = 10): Promise<AssistantSearchResponse> => {
+export const assistantSearch = async (
+  question: string,
+  input?: { limit?: number; categoryName?: string },
+): Promise<AssistantSearchResponse> => {
   return await apiRequest<AssistantSearchResponse>('/assistant/search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, limit }),
+    body: JSON.stringify({
+      question,
+      limit: input?.limit ?? 10,
+      categoryName: input?.categoryName,
+    }),
   });
 };
 

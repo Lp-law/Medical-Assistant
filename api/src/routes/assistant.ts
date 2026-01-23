@@ -10,7 +10,8 @@ router.use(requireAuth);
 
 const bodySchema = z.object({
   question: z.string().min(3).max(2000),
-  limit: z.number().int().min(1).max(20).optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+  categoryName: z.string().min(1).max(120).optional(),
 });
 
 type AssistantDocumentHit = {
@@ -23,8 +24,13 @@ type AssistantDocumentHit = {
   createdAt: string;
 };
 
-const searchDocumentsByQuery = async (q: string, limit: number): Promise<AssistantDocumentHit[]> => {
+const searchDocumentsByQuery = async (
+  q: string,
+  limit: number,
+  categoryName?: string,
+): Promise<AssistantDocumentHit[]> => {
   const ilike = `%${q}%`;
+  const categoryNameVal = categoryName ? `%${categoryName}%` : null;
   const rows = await prisma.$queryRaw<any[]>(
     Prisma.sql`
       SELECT
@@ -44,6 +50,7 @@ const searchDocumentsByQuery = async (q: string, limit: number): Promise<Assista
         array_to_string("d"."topics", ' ') ILIKE ${ilike} OR
         array_to_string("d"."keywords", ' ') ILIKE ${ilike}
       )
+      AND (${categoryNameVal}::text IS NULL OR "c"."name" ILIKE ${categoryNameVal})
       ORDER BY "d"."createdAt" DESC
       LIMIT ${limit}
     `,
@@ -69,13 +76,14 @@ router.post('/search', async (req, res) => {
 
   const limit = parsed.data.limit ?? 10;
   const question = parsed.data.question.trim();
+  const categoryName = parsed.data.categoryName?.trim() || undefined;
 
   const queries = await generateSearchQueries(question);
   const effectiveQueries = queries.length ? queries : [question];
 
   const hitCounts = new Map<string, { hit: AssistantDocumentHit; score: number }>();
   for (const q of effectiveQueries.slice(0, 5)) {
-    const hits = await searchDocumentsByQuery(q, limit);
+    const hits = await searchDocumentsByQuery(q, limit, categoryName);
     for (const hit of hits) {
       const existing = hitCounts.get(hit.id);
       if (existing) {

@@ -15,10 +15,11 @@ const formatDate = (value?: string | null): string => {
 
 type Props = {
   initialQuery?: string;
+  initialCategoryName?: string;
   autoSearchOnMount?: boolean;
 };
 
-const DocumentsLibrary: React.FC<Props> = ({ initialQuery, autoSearchOnMount = true }) => {
+const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, autoSearchOnMount = true }) => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'search' | 'upload'>('search');
 
@@ -76,6 +77,17 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, autoSearchOnMount = t
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const name = (initialCategoryName ?? '').trim();
+    if (!name) return;
+    if (!categories.length) return;
+    const match = categories.find((c) => c.name === name);
+    if (match && !categoryId) {
+      setCategoryId(match.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCategoryName, categories]);
 
   const canSearch = useMemo(() => Boolean(q.trim() || categoryId || from || to), [q, categoryId, from, to]);
 

@@ -3,7 +3,7 @@ import { Bot, Send, X, Search, ExternalLink } from 'lucide-react';
 import { assistantSearch, AssistantDocumentHit } from '../services/assistantApi';
 
 type Props = {
-  onOpenDocumentsWithQuery: (query: string) => void;
+  onOpenDocumentsWithQuery: (query: string, categoryName?: string) => void;
 };
 
 const formatDate = (iso?: string): string => {
@@ -12,29 +12,85 @@ const formatDate = (iso?: string): string => {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('he-IL');
 };
 
+type BotCategoryKey = 'all' | 'judgments' | 'damages' | 'opinions' | 'summaries';
+const CATEGORY_NAME: Record<Exclude<BotCategoryKey, 'all'>, string> = {
+  judgments: 'פסקי דין',
+  damages: 'תחשיבי נזק',
+  opinions: 'חוות דעת',
+  summaries: 'סיכומים',
+};
+
+type ChatTurn =
+  | { id: string; role: 'user'; text: string; createdAt: string }
+  | {
+      id: string;
+      role: 'assistant';
+      text: string;
+      createdAt: string;
+      queries: string[];
+      documents: AssistantDocumentHit[];
+      categoryName?: string;
+      limit: number;
+    };
+
 const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery }) => {
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [queries, setQueries] = useState<string[]>([]);
-  const [docs, setDocs] = useState<AssistantDocumentHit[]>([]);
+  const [categoryKey, setCategoryKey] = useState<BotCategoryKey>('all');
+  const [history, setHistory] = useState<ChatTurn[]>([]);
 
   const canAsk = useMemo(() => question.trim().length >= 3 && !loading, [loading, question]);
 
-  const ask = async () => {
+  const ask = async (override?: { question?: string; limit?: number }) => {
     if (!canAsk) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await assistantSearch(question.trim(), 10);
-      setQueries(res.queries ?? []);
-      setDocs(res.documents ?? []);
+      const q = (override?.question ?? question).trim();
+      const limit = override?.limit ?? 10;
+      const categoryName = categoryKey === 'all' ? undefined : CATEGORY_NAME[categoryKey];
+
+      const now = new Date().toISOString();
+      setHistory((prev) => [
+        ...prev,
+        { id: `${Date.now()}-u`, role: 'user', text: q, createdAt: now },
+      ]);
+
+      const res = await assistantSearch(q, { limit, categoryName });
+      const assistantTurn: ChatTurn = {
+        id: `${Date.now()}-a`,
+        role: 'assistant',
+        text: 'הנה התוצאות שמצאתי במאגר הידע. אפשר ללחוץ על שאילתה כדי לפתוח במסך מסמכים.',
+        createdAt: new Date().toISOString(),
+        queries: res.queries ?? [],
+        documents: res.documents ?? [],
+        categoryName,
+        limit,
+      };
+      setHistory((prev) => [...prev, assistantTurn]);
+      setQuestion('');
     } catch (e: any) {
       setError(e?.message ?? 'assistant_failed');
     } finally {
       setLoading(false);
     }
+  };
+
+  const lastAssistant = useMemo(() => {
+    for (let i = history.length - 1; i >= 0; i -= 1) {
+      const t = history[i];
+      if (t.role === 'assistant') return t;
+    }
+    return null;
+  }, [history]);
+
+  const loadMore = async () => {
+    const lastUser = [...history].reverse().find((t) => t.role === 'user') as ChatTurn | undefined;
+    if (!lastUser || lastUser.role !== 'user') return;
+    const nextLimit = Math.min((lastAssistant?.limit ?? 10) + 10, 50);
+    await ask({ question: lastUser.text, limit: nextLimit });
   };
 
   return (
@@ -69,6 +125,30 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery }) => {
             </div>
 
             <div className="px-5 py-4 space-y-4">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCategoryKey('all')}
+                  className={`rounded-full px-3 py-1 text-xs border transition ${
+                    categoryKey === 'all' ? 'bg-navy text-gold border-navy' : 'bg-white border-pearl text-slate'
+                  }`}
+                >
+                  הכל
+                </button>
+                {(Object.keys(CATEGORY_NAME) as Array<Exclude<BotCategoryKey, 'all'>>).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setCategoryKey(k)}
+                    className={`rounded-full px-3 py-1 text-xs border transition ${
+                      categoryKey === k ? 'bg-navy text-gold border-navy' : 'bg-white border-pearl text-slate'
+                    }`}
+                  >
+                    {CATEGORY_NAME[k]}
+                  </button>
+                ))}
+              </div>
+
               <div className="flex gap-2">
                 <input
                   className="flex-1 rounded-full border border-pearl bg-pearl/60 px-4 py-2 text-sm focus:border-gold focus:ring-1 focus:ring-gold outline-none transition"
@@ -84,7 +164,7 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery }) => {
                 />
                 <button
                   type="button"
-                  onClick={ask}
+                  onClick={() => ask()}
                   disabled={!canAsk}
                   className="rounded-full bg-gold text-navy px-4 py-2 text-sm font-semibold hover:bg-gold-light transition disabled:opacity-50 inline-flex items-center gap-2"
                 >
@@ -95,59 +175,95 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery }) => {
 
               {error && <div className="text-danger text-sm font-semibold">{error}</div>}
 
-              {queries.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-slate-light mb-2">שאילתות מוצעות</p>
-                  <div className="flex flex-wrap gap-2">
-                    {queries.map((q) => (
-                      <button
-                        key={q}
-                        type="button"
-                        onClick={() => onOpenDocumentsWithQuery(q)}
-                        className="rounded-full border border-pearl bg-white px-3 py-1 text-xs text-navy hover:bg-pearl/50 transition inline-flex items-center gap-1"
-                        title="פתח במסך מסמכים"
-                      >
-                        <Search className="w-3 h-3" />
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {history.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold text-slate-light">שיחה</p>
+                  <div className="max-h-[45vh] overflow-auto space-y-3 pr-1">
+                    {history.map((t) => (
+                      <div key={t.id} className={t.role === 'user' ? 'text-right' : 'text-right'}>
+                        <div
+                          className={`inline-block max-w-[92%] rounded-2xl px-4 py-3 text-sm ${
+                            t.role === 'user' ? 'bg-pearl/70 text-navy border border-pearl' : 'bg-white text-navy border border-pearl'
+                          }`}
+                        >
+                          <p className="whitespace-pre-wrap">{t.text}</p>
 
-              {docs.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-slate-light">תוצאות מובילות</p>
-                  <div className="max-h-[45vh] overflow-auto space-y-2 pr-1">
-                    {docs.map((d) => (
-                      <div key={d.id} className="rounded-card border border-pearl bg-white p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-navy">{d.title}</p>
-                            <p className="text-xs text-slate mt-1">
-                              {d.categoryName} • {formatDate(d.createdAt)} • {d.source}
-                            </p>
-                          </div>
-                          {d.attachmentUrl && (
-                            <a
-                              href={d.attachmentUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-gold hover:text-gold-light transition inline-flex items-center gap-1 text-xs"
-                            >
-                              <ExternalLink className="w-4 h-4" />
-                              קובץ
-                            </a>
+                          {t.role === 'assistant' && (
+                            <>
+                              {t.queries.length > 0 && (
+                                <div className="mt-3">
+                                  <p className="text-xs font-semibold text-slate-light mb-2">שאילתות מוצעות</p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {t.queries.map((q) => (
+                                      <button
+                                        key={`${t.id}-${q}`}
+                                        type="button"
+                                        onClick={() => onOpenDocumentsWithQuery(q, t.categoryName)}
+                                        className="rounded-full border border-pearl bg-white px-3 py-1 text-xs text-navy hover:bg-pearl/50 transition inline-flex items-center gap-1"
+                                        title="פתח במסך מסמכים"
+                                      >
+                                        <Search className="w-3 h-3" />
+                                        {q}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {t.documents.length > 0 && (
+                                <div className="mt-3 space-y-2">
+                                  <p className="text-xs font-semibold text-slate-light">תוצאות מובילות</p>
+                                  <div className="space-y-2">
+                                    {t.documents.map((d) => (
+                                      <div key={d.id} className="rounded-card border border-pearl bg-white p-3">
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div>
+                                            <p className="text-sm font-semibold text-navy">{d.title}</p>
+                                            <p className="text-xs text-slate mt-1">
+                                              {d.categoryName} • {formatDate(d.createdAt)} • {d.source}
+                                            </p>
+                                          </div>
+                                          {d.attachmentUrl && (
+                                            <a
+                                              href={d.attachmentUrl}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="text-gold hover:text-gold-light transition inline-flex items-center gap-1 text-xs"
+                                            >
+                                              <ExternalLink className="w-4 h-4" />
+                                              קובץ
+                                            </a>
+                                          )}
+                                        </div>
+                                        {d.summary && <p className="text-xs text-slate mt-2 line-clamp-3">{d.summary}</p>}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
-                        {d.summary && <p className="text-xs text-slate mt-2 line-clamp-3">{d.summary}</p>}
                       </div>
                     ))}
                   </div>
+
+                  {lastAssistant && lastAssistant.documents.length >= lastAssistant.limit && (
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={loadMore}
+                        disabled={loading || (lastAssistant.limit ?? 10) >= 50}
+                        className="rounded-full border border-gold text-gold px-4 py-2 text-sm font-semibold hover:bg-gold/10 transition disabled:opacity-50"
+                      >
+                        הצג עוד תוצאות
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {queries.length === 0 && docs.length === 0 && (
+              {history.length === 0 && (
                 <p className="text-xs text-slate">
                   טיפ: כתוב משפט אחד עם המילים המרכזיות (אבחנה/מומחה/סוג מסמך/הליך) ולחץ “חפש”.
                 </p>
