@@ -48,19 +48,24 @@ const ensureOwner = async (caseId: string, userId: string) => {
 };
 
 router.get('/', async (req, res) => {
-  const allCases = await prisma.case.findMany({
-    orderBy: { updatedAt: 'desc' },
-  });
+  try {
+    const allCases = await prisma.case.findMany({
+      orderBy: { updatedAt: 'desc' },
+    });
 
-  const ownCases = allCases
-    .filter((record) => record.ownerId === req.user!.id)
-    .map((record) => buildOwnerCaseResponse(record, req.user!.id));
+    const ownCases = allCases
+      .filter((record) => record.ownerId === req.user!.id)
+      .map((record) => buildOwnerCaseResponse(record, req.user!.id));
 
-  const otherCases = allCases
-    .filter((record) => record.ownerId !== req.user!.id)
-    .map((record) => buildPublicCaseResponse(record, req.user!.id));
+    const otherCases = allCases
+      .filter((record) => record.ownerId !== req.user!.id)
+      .map((record) => buildPublicCaseResponse(record, req.user!.id));
 
-  res.json({ ownCases, otherCases });
+    res.json({ ownCases, otherCases });
+  } catch (error) {
+    console.warn('[cases] failed to fetch cases', error);
+    res.status(500).json({ error: 'internal_error' });
+  }
 });
 
 router.post('/', async (req, res) => {
@@ -70,30 +75,35 @@ router.post('/', async (req, res) => {
     return;
   }
 
-  const payload = parseResult.data;
-  const now = new Date();
+  try {
+    const payload = parseResult.data;
+    const now = new Date();
 
-  const created = await prisma.case.create({
-    data: {
-      ownerId: req.user!.id,
-      title: payload.title ?? 'תיק חדש',
-      topicSummary: generateCaseTopicSummary(payload.title ?? '', payload.data),
-      data: (payload.data as Prisma.InputJsonValue | undefined) ?? {},
-      lastAccessedAt: now,
-      retentionExpiresAt: addDays(now, RETENTION_DAYS),
-      status: CaseStatus.ACTIVE,
-    },
-  });
+    const created = await prisma.case.create({
+      data: {
+        ownerId: req.user!.id,
+        title: payload.title ?? 'תיק חדש',
+        topicSummary: generateCaseTopicSummary(payload.title ?? '', payload.data),
+        data: (payload.data as Prisma.InputJsonValue | undefined) ?? {},
+        lastAccessedAt: now,
+        retentionExpiresAt: addDays(now, RETENTION_DAYS),
+        status: CaseStatus.ACTIVE,
+      },
+    });
 
-  await logAuditEvent({
-    action: 'CASE_CREATED',
-    userId: req.user!.id,
-    entityType: 'case',
-    entityId: created.id,
-    metadata: { title: created.title },
-  });
+    await logAuditEvent({
+      action: 'CASE_CREATED',
+      userId: req.user!.id,
+      entityType: 'case',
+      entityId: created.id,
+      metadata: { title: created.title },
+    });
 
-  res.status(201).json({ case: buildOwnerCaseResponse(created, req.user!.id) });
+    res.status(201).json({ case: buildOwnerCaseResponse(created, req.user!.id) });
+  } catch (error) {
+    console.warn('[cases] failed to create case', error);
+    res.status(500).json({ error: 'internal_error' });
+  }
 });
 
 router.get('/:id', async (req, res) => {
