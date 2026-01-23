@@ -1,22 +1,14 @@
 import React from 'react';
 import { ArrowRight } from 'lucide-react';
-import { CaseStatusType } from '../types';
-
-const statusLabel: Record<CaseStatusType, string> = {
-  ACTIVE: 'פעיל',
-  ARCHIVED: 'בארכיון',
-  PENDING_DELETE: 'ממתין למחיקה',
-};
 
 interface Props {
   mode: string;
   caseName?: string;
-  status?: CaseStatusType;
   isReadOnly?: boolean;
   onBack?: () => void;
 }
 
-const ContextRibbon: React.FC<Props> = ({ mode, caseName, status, isReadOnly, onBack }) => {
+const ContextRibbon: React.FC<Props> = ({ mode, caseName, isReadOnly, onBack }) => {
   const handleBack = () => {
     // If no callback is provided, we don't want to unexpectedly navigate away from the SPA.
     // In this app we pass onBack whenever there is a meaningful in-app "back".
@@ -34,7 +26,6 @@ const ContextRibbon: React.FC<Props> = ({ mode, caseName, status, isReadOnly, on
             {caseName}
           </span>
         )}
-        {status && <span className="badge-status bg-gold/15 text-navy">{statusLabel[status] ?? status}</span>}
       </div>
       {onBack && (
         <button

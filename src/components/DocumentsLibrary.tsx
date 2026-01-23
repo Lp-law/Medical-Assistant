@@ -5,7 +5,14 @@ import { createCategory, listCategories, searchDocuments, updateDocumentTags, up
 import LegalDisclaimer from './LegalDisclaimer';
 import { useAuth } from '../context/AuthContext';
 
-const badgeForCategory = (_name?: string): string => 'badge-muted';
+const badgeForCategory = (name?: string): string => {
+  if (!name) return 'badge-muted';
+  if (name.includes('פסק')) return 'badge-warning';
+  if (name.includes('נזק')) return 'badge-strong';
+  if (name.includes('חוות')) return 'badge-info';
+  if (name.includes('סיכום')) return 'badge-muted';
+  return 'badge-muted';
+};
 
 const formatDate = (value?: string | null): string => {
   if (!value) return '—';
@@ -91,14 +98,15 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
 
   const canSearch = useMemo(() => Boolean(q.trim() || categoryId || from || to), [q, categoryId, from, to]);
 
-  const runSearch = async (override?: { q?: string }) => {
+  const runSearch = async (override?: { q?: string; categoryId?: string }) => {
     setSearchLoading(true);
     setSearchError(null);
     try {
       const qValue = (override?.q ?? q).trim();
+      const categoryValue = override?.categoryId ?? categoryId;
       const payload = await searchDocuments({
         q: qValue || undefined,
-        categoryId: categoryId || undefined,
+        categoryId: categoryValue || undefined,
         from: from ? new Date(from).toISOString() : undefined,
         to: to ? new Date(to).toISOString() : undefined,
         limit: 50,
@@ -114,14 +122,31 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
 
   useEffect(() => {
     if (!autoSearchOnMount) return;
-    const next = (initialQuery ?? '').trim();
-    if (!next) return;
+    const nextQ = (initialQuery ?? '').trim();
+    const nextCategoryName = (initialCategoryName ?? '').trim();
+
+    if (!nextQ && !nextCategoryName) return;
+    if (!categories.length) return;
+
+    const nextCategoryId = nextCategoryName ? categories.find((c) => c.name === nextCategoryName)?.id : undefined;
+
     setActiveTab('search');
-    setQ(next);
-    // Run immediately with the provided query to avoid state timing issues.
-    runSearch({ q: next });
+    setQ(nextQ);
+    if (nextCategoryId) setCategoryId(nextCategoryId);
+
+    // Run immediately with overrides to avoid state timing issues.
+    runSearch({ q: nextQ, categoryId: nextCategoryId });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSearchOnMount, initialQuery]);
+  }, [autoSearchOnMount, initialQuery, initialCategoryName, categories]);
+
+  const QUICK_CATEGORY_LABELS = useMemo(
+    () => (['פסקי דין', 'תחשיבי נזק', 'חוות דעת', 'סיכומים'] as const),
+    [],
+  );
+
+  const quickCategoryId = (name: (typeof QUICK_CATEGORY_LABELS)[number]): string | undefined => {
+    return categories.find((c) => c.name === name)?.id;
+  };
 
   const openEditTags = (doc: DocumentRecord) => {
     setEditingId(doc.id);
@@ -219,6 +244,29 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
         </div>
         <div className="card-underline" />
         <div className="card-body space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs font-semibold text-slate-light">פילטר מהיר (4 קטגוריות)</p>
+            <div className="segmented-control">
+              <button type="button" data-active={categoryId === ''} onClick={() => setCategoryId('')}>
+                הכל
+              </button>
+              {QUICK_CATEGORY_LABELS.map((label) => {
+                const id = quickCategoryId(label);
+                if (!id) return null;
+                return (
+                  <button
+                    key={`quick-${label}`}
+                    type="button"
+                    data-active={categoryId === id}
+                    onClick={() => setCategoryId(id)}
+                    title={label}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="text-xs font-semibold text-slate-light">טקסט חופשי</label>
@@ -269,7 +317,7 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
           <div className="flex justify-end">
             <button
               className="btn-primary px-5"
-              onClick={runSearch}
+              onClick={() => runSearch()}
               disabled={!canSearch || searchLoading}
             >
               <Search className="w-4 h-4" />
@@ -375,6 +423,26 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
         </div>
         <div className="card-underline" />
         <div className="card-body space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs font-semibold text-slate-light">קטגוריה מהירה</p>
+            <div className="segmented-control">
+              {QUICK_CATEGORY_LABELS.map((label) => {
+                const id = quickCategoryId(label);
+                if (!id) return null;
+                return (
+                  <button
+                    key={`upload-quick-${label}`}
+                    type="button"
+                    data-active={uploadCategoryId === id}
+                    onClick={() => setUploadCategoryId(id)}
+                    title={label}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="text-xs font-semibold text-slate-light">שם המסמך</label>

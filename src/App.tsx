@@ -2,7 +2,6 @@ import React, { ReactNode, useMemo, useState } from 'react';
 import { useAuth } from './context/AuthContext';
 import LoginScreen from './components/LoginScreen';
 import {
-  ChevronLeft,
   Library,
   FileText,
   Scale,
@@ -116,7 +115,6 @@ const App: React.FC = () => {
         <ContextRibbon
           mode="מרכז ידע משרדי"
           caseName={currentPage === 'documents' ? 'מסמכים וחיפוש' : 'דף הבית'}
-          status={undefined}
           isReadOnly={false}
           onBack={canGoBack ? popPage : undefined}
         />
