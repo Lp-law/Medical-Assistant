@@ -10,23 +10,33 @@ type HeadRow = {
   defendant: number; // ₪
 };
 
-type Adjustment = {
+type Reduction = {
   id: string;
   enabled: boolean;
   label: string;
   percent: number; // 0-100
 };
 
+type DefendantShare = {
+  id: string;
+  enabled: boolean;
+  name: string;
+  percent: number; // 0-100
+};
+
 type Sheet = {
-  version: 1;
+  version: 2;
   title: string;
   rows: HeadRow[];
-  adjustments: Adjustment[];
+  contributoryNegligencePercent: number; // אשם תורם (%), applied first
+  reductions: Reduction[]; // applied after contributory negligence (multiplicative)
+  defendants: DefendantShare[]; // allocation after all reductions
   updatedAt: string;
 };
 
 // Must NOT start with "lexmedical_" (blocked by storageGuard as PHI).
-const STORAGE_KEY = 'calc_damages_v1';
+const STORAGE_KEY_V2 = 'calc_damages_v2';
+const STORAGE_KEY_V1 = 'calc_damages_v1';
 
 const uid = (): string => Math.random().toString(16).slice(2) + Date.now().toString(16);
 
@@ -54,17 +64,21 @@ const DEFAULT_ROWS: HeadRow[] = [
   { id: uid(), enabled: true, name: 'מל״ל', plaintiff: 3307021, defendant: 3307021 },
 ];
 
-const DEFAULT_ADJUSTMENTS: Adjustment[] = [
-  { id: uid(), enabled: true, label: 'אשם תורם (%)', percent: 0 },
+const DEFAULT_REDUCTIONS: Reduction[] = [
   { id: uid(), enabled: true, label: 'פגיעה בסיכויי החלמה (%)', percent: 0 },
-  { id: uid(), enabled: true, label: 'חלוקת אחריות לגורמים נוספים (%)', percent: 0 },
+];
+
+const DEFAULT_DEFENDANTS: DefendantShare[] = [
+  { id: uid(), enabled: true, name: 'נתבע 1', percent: 100 },
 ];
 
 const defaultSheet = (): Sheet => ({
-  version: 1,
+  version: 2,
   title: 'מחשבון נזק',
   rows: DEFAULT_ROWS,
-  adjustments: DEFAULT_ADJUSTMENTS,
+  contributoryNegligencePercent: 0,
+  reductions: DEFAULT_REDUCTIONS,
+  defendants: DEFAULT_DEFENDANTS,
   updatedAt: new Date().toISOString(),
 });
 
@@ -72,39 +86,90 @@ const calcAvg = (p: number, d: number): number => (safeNumber(p) + safeNumber(d)
 
 const sum = (values: number[]): number => values.reduce((acc, v) => acc + safeNumber(v), 0);
 
-const applyAdjustments = (base: number, adjustments: Adjustment[]): { final: number; factor: number } => {
-  const factor = adjustments
-    .filter((a) => a.enabled)
-    .reduce((acc, a) => acc * (1 - clampPercent(a.percent) / 100), 1);
-  return { final: base * factor, factor };
+const applyContribAndReductions = (
+  base: number,
+  contributoryNegligencePercent: number,
+  reductions: Reduction[],
+): { afterContrib: number; afterAll: number; contribFactor: number; reductionsFactor: number } => {
+  const contribFactor = 1 - clampPercent(contributoryNegligencePercent) / 100;
+  const afterContrib = base * contribFactor;
+  const reductionsFactor = reductions
+    .filter((r) => r.enabled)
+    .reduce((acc, r) => acc * (1 - clampPercent(r.percent) / 100), 1);
+  const afterAll = afterContrib * reductionsFactor;
+  return { afterContrib, afterAll, contribFactor, reductionsFactor };
 };
 
 const DamagesCalculator: React.FC = () => {
   const importRef = useRef<HTMLInputElement | null>(null);
   const [sheet, setSheet] = useState<Sheet>(() => {
     try {
-      const raw = storageGetItem(STORAGE_KEY);
+      // Prefer v2; if missing, try migrating from v1.
+      const raw = storageGetItem(STORAGE_KEY_V2) ?? storageGetItem(STORAGE_KEY_V1);
       if (!raw) return defaultSheet();
       const parsed = JSON.parse(raw) as Partial<Sheet>;
-      if (parsed.version !== 1) return defaultSheet();
-      return {
-        version: 1,
-        title: String(parsed.title ?? 'מחשבון נזק'),
-        rows: Array.isArray(parsed.rows) ? (parsed.rows as any[]).map((r) => ({
-          id: String(r.id ?? uid()),
-          enabled: Boolean(r.enabled ?? true),
-          name: String(r.name ?? ''),
-          plaintiff: safeNumber(r.plaintiff),
-          defendant: safeNumber(r.defendant),
-        })) : DEFAULT_ROWS,
-        adjustments: Array.isArray(parsed.adjustments) ? (parsed.adjustments as any[]).map((a) => ({
-          id: String(a.id ?? uid()),
-          enabled: Boolean(a.enabled ?? true),
-          label: String(a.label ?? ''),
-          percent: clampPercent(safeNumber(a.percent)),
-        })) : DEFAULT_ADJUSTMENTS,
-        updatedAt: String(parsed.updatedAt ?? new Date().toISOString()),
-      };
+      // v2
+      if (parsed.version === 2) {
+        return {
+          version: 2,
+          title: String(parsed.title ?? 'מחשבון נזק'),
+          rows: Array.isArray(parsed.rows)
+            ? (parsed.rows as any[]).map((r) => ({
+                id: String(r.id ?? uid()),
+                enabled: Boolean(r.enabled ?? true),
+                name: String(r.name ?? ''),
+                plaintiff: safeNumber(r.plaintiff),
+                defendant: safeNumber(r.defendant),
+              }))
+            : DEFAULT_ROWS,
+          contributoryNegligencePercent: clampPercent(safeNumber((parsed as any).contributoryNegligencePercent)),
+          reductions: Array.isArray((parsed as any).reductions)
+            ? ((parsed as any).reductions as any[]).map((r) => ({
+                id: String(r.id ?? uid()),
+                enabled: Boolean(r.enabled ?? true),
+                label: String(r.label ?? ''),
+                percent: clampPercent(safeNumber(r.percent)),
+              }))
+            : DEFAULT_REDUCTIONS,
+          defendants: Array.isArray((parsed as any).defendants)
+            ? ((parsed as any).defendants as any[]).map((d) => ({
+                id: String(d.id ?? uid()),
+                enabled: Boolean(d.enabled ?? true),
+                name: String(d.name ?? 'נתבע'),
+                percent: clampPercent(safeNumber(d.percent)),
+              }))
+            : DEFAULT_DEFENDANTS,
+          updatedAt: String(parsed.updatedAt ?? new Date().toISOString()),
+        };
+      }
+
+      // v1 migration
+      if (parsed.version === 1) {
+        const v1Adjustments = Array.isArray((parsed as any).adjustments) ? ((parsed as any).adjustments as any[]) : [];
+        const contributory = v1Adjustments.find((a) => String(a.label ?? '').includes('אשם'))?.percent ?? 0;
+        const lossChance = v1Adjustments.find((a) => String(a.label ?? '').includes('סיכויי'))?.percent ?? 0;
+        return {
+          version: 2,
+          title: String(parsed.title ?? 'מחשבון נזק'),
+          rows: Array.isArray(parsed.rows)
+            ? (parsed.rows as any[]).map((r) => ({
+                id: String(r.id ?? uid()),
+                enabled: Boolean(r.enabled ?? true),
+                name: String(r.name ?? ''),
+                plaintiff: safeNumber(r.plaintiff),
+                defendant: safeNumber(r.defendant),
+              }))
+            : DEFAULT_ROWS,
+          contributoryNegligencePercent: clampPercent(safeNumber(contributory)),
+          reductions: [
+            { id: uid(), enabled: true, label: 'פגיעה בסיכויי החלמה (%)', percent: clampPercent(safeNumber(lossChance)) },
+          ],
+          defendants: DEFAULT_DEFENDANTS,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+
+      return defaultSheet();
     } catch {
       return defaultSheet();
     }
@@ -113,12 +178,12 @@ const DamagesCalculator: React.FC = () => {
   useEffect(() => {
     try {
       const next: Sheet = { ...sheet, updatedAt: new Date().toISOString() };
-      storageSetItem(STORAGE_KEY, JSON.stringify(next));
+      storageSetItem(STORAGE_KEY_V2, JSON.stringify(next));
     } catch {
       // ignore
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sheet.title, sheet.rows, sheet.adjustments]);
+  }, [sheet.title, sheet.rows, sheet.contributoryNegligencePercent, sheet.reductions, sheet.defendants]);
 
   const activeRows = useMemo(() => sheet.rows.filter((r) => r.enabled), [sheet.rows]);
 
@@ -130,11 +195,11 @@ const DamagesCalculator: React.FC = () => {
   }, [activeRows]);
 
   const after = useMemo(() => {
-    const plaintiff = applyAdjustments(totals.plaintiff, sheet.adjustments);
-    const defendant = applyAdjustments(totals.defendant, sheet.adjustments);
-    const avg = applyAdjustments(totals.avg, sheet.adjustments);
+    const plaintiff = applyContribAndReductions(totals.plaintiff, sheet.contributoryNegligencePercent, sheet.reductions);
+    const defendant = applyContribAndReductions(totals.defendant, sheet.contributoryNegligencePercent, sheet.reductions);
+    const avg = applyContribAndReductions(totals.avg, sheet.contributoryNegligencePercent, sheet.reductions);
     return { plaintiff, defendant, avg };
-  }, [sheet.adjustments, totals.avg, totals.defendant, totals.plaintiff]);
+  }, [sheet.contributoryNegligencePercent, sheet.reductions, totals.avg, totals.defendant, totals.plaintiff]);
 
   const updateRow = (id: string, patch: Partial<HeadRow>) => {
     setSheet((prev) => ({
@@ -154,20 +219,20 @@ const DamagesCalculator: React.FC = () => {
       ],
     }));
 
-  const updateAdj = (id: string, patch: Partial<Adjustment>) => {
+  const updateReduction = (id: string, patch: Partial<Reduction>) => {
     setSheet((prev) => ({
       ...prev,
-      adjustments: prev.adjustments.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+      reductions: prev.reductions.map((r) => (r.id === id ? { ...r, ...patch } : r)),
     }));
   };
 
-  const removeAdj = (id: string) =>
-    setSheet((prev) => ({ ...prev, adjustments: prev.adjustments.filter((a) => a.id !== id) }));
+  const removeReduction = (id: string) =>
+    setSheet((prev) => ({ ...prev, reductions: prev.reductions.filter((r) => r.id !== id) }));
 
-  const addAdj = () =>
+  const addReduction = () =>
     setSheet((prev) => ({
       ...prev,
-      adjustments: [...prev.adjustments, { id: uid(), enabled: true, label: 'הפחתה נוספת (%)', percent: 0 }],
+      reductions: [...prev.reductions, { id: uid(), enabled: true, label: 'הפחתה נוספת (%)', percent: 0 }],
     }));
 
   const reset = () => setSheet(defaultSheet());
@@ -186,28 +251,102 @@ const DamagesCalculator: React.FC = () => {
   const importJson = async (file: File) => {
     const text = await file.text();
     const parsed = JSON.parse(text) as Partial<Sheet>;
-    if (parsed.version !== 1) {
-      throw new Error('קובץ לא נתמך (גרסה שונה).');
+    // Support v2 import, and v1 import (migrated).
+    if (parsed.version === 2) {
+      setSheet({
+        version: 2,
+        title: String(parsed.title ?? 'מחשבון נזק'),
+        rows: Array.isArray(parsed.rows)
+          ? (parsed.rows as any[]).map((r) => ({
+              id: String(r.id ?? uid()),
+              enabled: Boolean(r.enabled ?? true),
+              name: String(r.name ?? ''),
+              plaintiff: safeNumber(r.plaintiff),
+              defendant: safeNumber(r.defendant),
+            }))
+          : [],
+        contributoryNegligencePercent: clampPercent(safeNumber((parsed as any).contributoryNegligencePercent)),
+        reductions: Array.isArray((parsed as any).reductions)
+          ? ((parsed as any).reductions as any[]).map((r) => ({
+              id: String(r.id ?? uid()),
+              enabled: Boolean(r.enabled ?? true),
+              label: String(r.label ?? ''),
+              percent: clampPercent(safeNumber(r.percent)),
+            }))
+          : [],
+        defendants: Array.isArray((parsed as any).defendants)
+          ? ((parsed as any).defendants as any[]).map((d) => ({
+              id: String(d.id ?? uid()),
+              enabled: Boolean(d.enabled ?? true),
+              name: String(d.name ?? 'נתבע'),
+              percent: clampPercent(safeNumber(d.percent)),
+            }))
+          : DEFAULT_DEFENDANTS,
+        updatedAt: new Date().toISOString(),
+      });
+      return;
     }
-    setSheet({
-      version: 1,
-      title: String(parsed.title ?? 'מחשבון נזק'),
-      rows: Array.isArray(parsed.rows) ? (parsed.rows as any[]).map((r) => ({
-        id: String(r.id ?? uid()),
-        enabled: Boolean(r.enabled ?? true),
-        name: String(r.name ?? ''),
-        plaintiff: safeNumber(r.plaintiff),
-        defendant: safeNumber(r.defendant),
-      })) : [],
-      adjustments: Array.isArray(parsed.adjustments) ? (parsed.adjustments as any[]).map((a) => ({
-        id: String(a.id ?? uid()),
-        enabled: Boolean(a.enabled ?? true),
-        label: String(a.label ?? ''),
-        percent: clampPercent(safeNumber(a.percent)),
-      })) : [],
-      updatedAt: new Date().toISOString(),
-    });
+    if (parsed.version === 1) {
+      const v1Adjustments = Array.isArray((parsed as any).adjustments) ? ((parsed as any).adjustments as any[]) : [];
+      const contributory = v1Adjustments.find((a) => String(a.label ?? '').includes('אשם'))?.percent ?? 0;
+      const lossChance = v1Adjustments.find((a) => String(a.label ?? '').includes('סיכויי'))?.percent ?? 0;
+      setSheet({
+        version: 2,
+        title: String(parsed.title ?? 'מחשבון נזק'),
+        rows: Array.isArray(parsed.rows)
+          ? (parsed.rows as any[]).map((r) => ({
+              id: String(r.id ?? uid()),
+              enabled: Boolean(r.enabled ?? true),
+              name: String(r.name ?? ''),
+              plaintiff: safeNumber(r.plaintiff),
+              defendant: safeNumber(r.defendant),
+            }))
+          : [],
+        contributoryNegligencePercent: clampPercent(safeNumber(contributory)),
+        reductions: [
+          { id: uid(), enabled: true, label: 'פגיעה בסיכויי החלמה (%)', percent: clampPercent(safeNumber(lossChance)) },
+        ],
+        defendants: DEFAULT_DEFENDANTS,
+        updatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+    throw new Error('קובץ לא נתמך (גרסה שונה).');
   };
+
+  const updateDefendant = (id: string, patch: Partial<DefendantShare>) => {
+    setSheet((prev) => ({
+      ...prev,
+      defendants: prev.defendants.map((d) => (d.id === id ? { ...d, ...patch } : d)),
+    }));
+  };
+
+  const removeDefendant = (id: string) =>
+    setSheet((prev) => ({ ...prev, defendants: prev.defendants.filter((d) => d.id !== id) }));
+
+  const addDefendant = () =>
+    setSheet((prev) => ({
+      ...prev,
+      defendants: [...prev.defendants, { id: uid(), enabled: true, name: `נתבע ${prev.defendants.length + 1}`, percent: 0 }],
+    }));
+
+  const activeDefendants = useMemo(() => sheet.defendants.filter((d) => d.enabled), [sheet.defendants]);
+  const defendantsPercentSum = useMemo(() => sum(activeDefendants.map((d) => d.percent)), [activeDefendants]);
+  const defendantAmounts = useMemo(() => {
+    const calcFor = (baseAfterAll: number) => {
+      return activeDefendants.map((d) => ({
+        id: d.id,
+        name: d.name,
+        percent: d.percent,
+        amount: baseAfterAll * (clampPercent(d.percent) / 100),
+      }));
+    };
+    return {
+      plaintiff: calcFor(after.plaintiff.afterAll),
+      defendant: calcFor(after.defendant.afterAll),
+      avg: calcFor(after.avg.afterAll),
+    };
+  }, [activeDefendants, after.avg.afterAll, after.defendant.afterAll, after.plaintiff.afterAll]);
 
   return (
     <div className="space-y-6" dir="rtl">
@@ -221,9 +360,13 @@ const DamagesCalculator: React.FC = () => {
             <Plus className="w-4 h-4" />
             הוסף ראש נזק
           </button>
-          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={addAdj}>
+          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={addReduction}>
             <Plus className="w-4 h-4" />
             הוסף הפחתה
+          </button>
+          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={addDefendant}>
+            <Plus className="w-4 h-4" />
+            הוסף נתבע
           </button>
           <button type="button" className="btn-outline text-sm px-4 py-2" onClick={() => importRef.current?.click()}>
             <Upload className="w-4 h-4" />
@@ -362,24 +505,44 @@ const DamagesCalculator: React.FC = () => {
             <div className="space-y-1">
               <p className="text-sm font-semibold">הפחתות באחוזים</p>
               <p className="text-xs text-slate-light">
-                ההפחתות מוחלות בצורה מצטברת: מכפלה של \(1 - p/100\) לכל הפחתה פעילה.
+                סדר החישוב: קודם מפחיתים אשם תורם, אחר כך מפחיתים שאר ההפחתות (מצטבר במכפלה), ורק אז מחלקים אחריות בין נתבעים.
               </p>
             </div>
           </div>
           <div className="card-underline" />
           <div className="card-body space-y-3">
-            {sheet.adjustments.map((a) => (
-              <div key={a.id} className="rounded-card border border-pearl bg-white p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="rounded-card border border-pearl bg-white p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2">
+                <span className="badge-warning">אשם תורם</span>
+                <span className="text-xs text-slate-light">(% מהסכום הכולל)</span>
+              </div>
+              <div className="flex items-center gap-2 justify-between sm:justify-end">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    className="w-28 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                    value={sheet.contributoryNegligencePercent}
+                    onChange={(e) =>
+                      setSheet((prev) => ({ ...prev, contributoryNegligencePercent: clampPercent(safeNumber(e.target.value)) }))
+                    }
+                  />
+                  <span className="text-xs text-slate-light">%</span>
+                </div>
+              </div>
+            </div>
+
+            {sheet.reductions.map((r) => (
+              <div key={r.id} className="rounded-card border border-pearl bg-white p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    checked={a.enabled}
-                    onChange={(e) => updateAdj(a.id, { enabled: e.target.checked })}
+                    checked={r.enabled}
+                    onChange={(e) => updateReduction(r.id, { enabled: e.target.checked })}
                   />
                   <input
                     className="w-56 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
-                    value={a.label}
-                    onChange={(e) => updateAdj(a.id, { label: e.target.value })}
+                    value={r.label}
+                    onChange={(e) => updateReduction(r.id, { label: e.target.value })}
                   />
                 </div>
                 <div className="flex items-center gap-2 justify-between sm:justify-end">
@@ -387,12 +550,12 @@ const DamagesCalculator: React.FC = () => {
                     <input
                       type="number"
                       className="w-28 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
-                      value={a.percent}
-                      onChange={(e) => updateAdj(a.id, { percent: clampPercent(safeNumber(e.target.value)) })}
+                      value={r.percent}
+                      onChange={(e) => updateReduction(r.id, { percent: clampPercent(safeNumber(e.target.value)) })}
                     />
                     <span className="text-xs text-slate-light">%</span>
                   </div>
-                  <button type="button" className="btn-outline text-[11px] px-3 py-1.5" onClick={() => removeAdj(a.id)}>
+                  <button type="button" className="btn-outline text-[11px] px-3 py-1.5" onClick={() => removeReduction(r.id)}>
                     <Trash2 className="w-4 h-4" />
                     הסר
                   </button>
@@ -415,29 +578,141 @@ const DamagesCalculator: React.FC = () => {
             <div className="mini-card">
               <div className="flex items-center justify-between">
                 <span className="font-semibold">תרחיש תובע</span>
-                <span className="badge-strong">₪ {formatILS(after.plaintiff.final)}</span>
+                <span className="badge-strong">₪ {formatILS(after.plaintiff.afterAll)}</span>
               </div>
               <p className="text-xs text-slate-light mt-1">
-                לפני: ₪ {formatILS(totals.plaintiff)} · פקטור מצטבר: {after.plaintiff.factor.toFixed(3)}
+                לפני: ₪ {formatILS(totals.plaintiff)} · אחרי אשם תורם: ₪ {formatILS(after.plaintiff.afterContrib)} · פקטור הפחתות: {after.plaintiff.reductionsFactor.toFixed(3)}
               </p>
             </div>
             <div className="mini-card">
               <div className="flex items-center justify-between">
                 <span className="font-semibold">תרחיש נתבע</span>
-                <span className="badge-muted">₪ {formatILS(after.defendant.final)}</span>
+                <span className="badge-muted">₪ {formatILS(after.defendant.afterAll)}</span>
               </div>
               <p className="text-xs text-slate-light mt-1">
-                לפני: ₪ {formatILS(totals.defendant)} · פקטור מצטבר: {after.defendant.factor.toFixed(3)}
+                לפני: ₪ {formatILS(totals.defendant)} · אחרי אשם תורם: ₪ {formatILS(after.defendant.afterContrib)} · פקטור הפחתות: {after.defendant.reductionsFactor.toFixed(3)}
               </p>
             </div>
             <div className="mini-card">
               <div className="flex items-center justify-between">
                 <span className="font-semibold">תרחיש ממוצע</span>
-                <span className="badge-warning">₪ {formatILS(after.avg.final)}</span>
+                <span className="badge-warning">₪ {formatILS(after.avg.afterAll)}</span>
               </div>
               <p className="text-xs text-slate-light mt-1">
-                לפני: ₪ {formatILS(totals.avg)} · פקטור מצטבר: {after.avg.factor.toFixed(3)}
+                לפני: ₪ {formatILS(totals.avg)} · אחרי אשם תורם: ₪ {formatILS(after.avg.afterContrib)} · פקטור הפחתות: {after.avg.reductionsFactor.toFixed(3)}
               </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="card-shell">
+        <div className="card-accent" />
+        <div className="card-head">
+          <div className="space-y-1">
+            <p className="text-sm font-semibold">חלוקת אחריות בין נתבעים</p>
+            <p className="text-xs text-slate-light">
+              לאחר כל ההפחתות, הסכום מתחלק לפי אחוז לכל נתבע. מומלץ שסכום האחוזים יהיה 100%.
+            </p>
+          </div>
+          <span className={defendantsPercentSum === 100 ? 'badge-info' : 'badge-warning'}>
+            סה״כ אחוזים: {formatILS(defendantsPercentSum)}%
+          </span>
+        </div>
+        <div className="card-underline" />
+        <div className="card-body space-y-4">
+          <div className="overflow-auto">
+            <table className="min-w-[760px] w-full text-sm border-separate border-spacing-0">
+              <thead>
+                <tr className="text-slate-light">
+                  <th className="text-right px-3 py-2 border-b border-pearl">כלול</th>
+                  <th className="text-right px-3 py-2 border-b border-pearl">נתבע</th>
+                  <th className="text-right px-3 py-2 border-b border-pearl">אחוז (%)</th>
+                  <th className="text-right px-3 py-2 border-b border-pearl">פעולות</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sheet.defendants.map((d) => (
+                  <tr key={d.id}>
+                    <td className="px-3 py-2 border-b border-pearl">
+                      <input
+                        type="checkbox"
+                        checked={d.enabled}
+                        onChange={(e) => updateDefendant(d.id, { enabled: e.target.checked })}
+                      />
+                    </td>
+                    <td className="px-3 py-2 border-b border-pearl">
+                      <input
+                        className="w-56 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                        value={d.name}
+                        onChange={(e) => updateDefendant(d.id, { name: e.target.value })}
+                      />
+                    </td>
+                    <td className="px-3 py-2 border-b border-pearl">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          className="w-28 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                          value={d.percent}
+                          onChange={(e) => updateDefendant(d.id, { percent: clampPercent(safeNumber(e.target.value)) })}
+                        />
+                        <span className="text-xs text-slate-light">%</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 border-b border-pearl">
+                      <button type="button" className="btn-outline text-[11px] px-3 py-1.5" onClick={() => removeDefendant(d.id)}>
+                        <Trash2 className="w-4 h-4" />
+                        הסר
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="mini-card">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold">תרחיש תובע</span>
+                <span className="badge-strong">₪ {formatILS(after.plaintiff.afterAll)}</span>
+              </div>
+              <div className="mt-2 space-y-1 text-xs text-slate">
+                {defendantAmounts.plaintiff.map((x) => (
+                  <div key={`p-${x.id}`} className="flex items-center justify-between">
+                    <span>{x.name} ({formatILS(x.percent)}%)</span>
+                    <span>₪ {formatILS(x.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="mini-card">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold">תרחיש נתבע</span>
+                <span className="badge-muted">₪ {formatILS(after.defendant.afterAll)}</span>
+              </div>
+              <div className="mt-2 space-y-1 text-xs text-slate">
+                {defendantAmounts.defendant.map((x) => (
+                  <div key={`d-${x.id}`} className="flex items-center justify-between">
+                    <span>{x.name} ({formatILS(x.percent)}%)</span>
+                    <span>₪ {formatILS(x.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="mini-card">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold">תרחיש ממוצע</span>
+                <span className="badge-warning">₪ {formatILS(after.avg.afterAll)}</span>
+              </div>
+              <div className="mt-2 space-y-1 text-xs text-slate">
+                {defendantAmounts.avg.map((x) => (
+                  <div key={`a-${x.id}`} className="flex items-center justify-between">
+                    <span>{x.name} ({formatILS(x.percent)}%)</span>
+                    <span>₪ {formatILS(x.amount)}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
