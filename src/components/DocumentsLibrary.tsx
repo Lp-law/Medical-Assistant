@@ -13,7 +13,12 @@ const formatDate = (value?: string | null): string => {
   return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString('he-IL');
 };
 
-const DocumentsLibrary: React.FC = () => {
+type Props = {
+  initialQuery?: string;
+  autoSearchOnMount?: boolean;
+};
+
+const DocumentsLibrary: React.FC<Props> = ({ initialQuery, autoSearchOnMount = true }) => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'search' | 'upload'>('search');
 
@@ -74,12 +79,13 @@ const DocumentsLibrary: React.FC = () => {
 
   const canSearch = useMemo(() => Boolean(q.trim() || categoryId || from || to), [q, categoryId, from, to]);
 
-  const runSearch = async () => {
+  const runSearch = async (override?: { q?: string }) => {
     setSearchLoading(true);
     setSearchError(null);
     try {
+      const qValue = (override?.q ?? q).trim();
       const payload = await searchDocuments({
-        q: q.trim() || undefined,
+        q: qValue || undefined,
         categoryId: categoryId || undefined,
         from: from ? new Date(from).toISOString() : undefined,
         to: to ? new Date(to).toISOString() : undefined,
@@ -93,6 +99,17 @@ const DocumentsLibrary: React.FC = () => {
       setSearchLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!autoSearchOnMount) return;
+    const next = (initialQuery ?? '').trim();
+    if (!next) return;
+    setActiveTab('search');
+    setQ(next);
+    // Run immediately with the provided query to avoid state timing issues.
+    runSearch({ q: next });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSearchOnMount, initialQuery]);
 
   const openEditTags = (doc: DocumentRecord) => {
     setEditingId(doc.id);

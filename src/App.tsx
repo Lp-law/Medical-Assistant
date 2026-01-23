@@ -12,11 +12,13 @@ import {
   Bot,
   Bell,
   UserCircle,
+  Mail,
 } from 'lucide-react';
 import ContextRibbon from './components/ContextRibbon';
 import LegalDisclaimer from './components/LegalDisclaimer';
 import DocumentsLibrary from './components/DocumentsLibrary';
 import QuickUploadModal from './components/QuickUploadModal';
+import { runEmailIngestNow } from './services/adminApi';
 
 type Page = 'home' | 'documents';
 
@@ -31,10 +33,13 @@ const CATEGORY_NAME: Record<UploadCategoryKey, string> = {
 
 const App: React.FC = () => {
   const { user, logout } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [pageStack, setPageStack] = useState<Page[]>(['home']);
   const [uploadCategory, setUploadCategory] = useState<UploadCategoryKey | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [homeSearch, setHomeSearch] = useState('');
+  const [homeIngestLoading, setHomeIngestLoading] = useState(false);
+  const [homeIngestResult, setHomeIngestResult] = useState<string | null>(null);
 
   const handleLogout = () => {
     logout();
@@ -64,6 +69,23 @@ const App: React.FC = () => {
   const canGoBack = useMemo(() => pageStack.length > 1, [pageStack.length]);
   const pushPage = (page: Page) => setPageStack((prev) => [...prev, page]);
   const popPage = () => setPageStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
+
+  const handleManualEmailIngest = async () => {
+    setHomeIngestLoading(true);
+    setHomeIngestResult(null);
+    try {
+      const result = await runEmailIngestNow();
+      if (result.success) {
+        setHomeIngestResult(`הושלם: נמצאו ${result.processedMessages}, נוצרו ${result.documentsCreated}.`);
+      } else {
+        setHomeIngestResult(`נכשל: ${result.error ?? 'email_ingest_failed'}`);
+      }
+    } catch (e: any) {
+      setHomeIngestResult(e?.message ?? 'email_ingest_failed');
+    } finally {
+      setHomeIngestLoading(false);
+    }
+  };
 
   if (!user) {
     return <LoginScreen />;
@@ -144,6 +166,26 @@ const App: React.FC = () => {
                       </button>
                     </div>
                   </div>
+
+                  <div className="mt-4 rounded-card border border-pearl bg-white p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-navy">משיכת מסמכים מהמייל</p>
+                      <p className="text-xs text-slate mt-1">
+                        כפתור ידני שמריץ את משיכת המסמכים מה־IMAP (אדמין בלבד).
+                      </p>
+                      {homeIngestResult && <p className="text-xs mt-2 text-slate">{homeIngestResult}</p>}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleManualEmailIngest}
+                      disabled={!isAdmin || homeIngestLoading}
+                      className="rounded-full bg-navy text-gold px-4 py-2 text-sm font-semibold hover:bg-navy/90 transition disabled:opacity-50 inline-flex items-center gap-2"
+                      title={!isAdmin ? 'נדרש משתמש Admin' : undefined}
+                    >
+                      <Mail className="w-4 h-4" />
+                      {homeIngestLoading ? 'מושך...' : 'משוך פסקי דין מהמייל'}
+                    </button>
+                  </div>
                 </SectionCard>
 
                 <SectionCard title="הזנת ידע (4 קטגוריות)" subtitle="PDF / Word">
@@ -221,7 +263,7 @@ const App: React.FC = () => {
 
             {currentPage === 'documents' && (
               <SectionCard title="מסמכים" subtitle="חיפוש, העלאה, תיוג">
-                <DocumentsLibrary />
+                <DocumentsLibrary initialQuery={homeSearch} autoSearchOnMount />
               </SectionCard>
             )}
           </div>
