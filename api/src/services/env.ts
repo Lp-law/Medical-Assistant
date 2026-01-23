@@ -38,9 +38,13 @@ const envSchema = z.object({
   IMAP_HOST: z.string().optional(),
   IMAP_PORT: z.string().optional(),
   IMAP_SECURE: z.string().optional(),
+  // Backwards/alias support
+  IMAP_TLS: z.string().optional(),
   IMAP_USER: z.string().optional(),
   IMAP_PASSWORD: z.string().optional(),
   IMAP_MAILBOX: z.string().optional(),
+  // Backwards/alias support (older UI name)
+  EMAIL_INGESTION_FOLDER: z.string().optional(),
   IMAP_FROM_FILTER: z.string().optional(),
 });
 
@@ -96,10 +100,11 @@ export const config = {
     enabled: (env.IMAP_ENABLED ?? '').toLowerCase() === 'true',
     host: env.IMAP_HOST ?? '',
     port: env.IMAP_PORT ? Number(env.IMAP_PORT) : 993,
-    secure: (env.IMAP_SECURE ?? 'true').toLowerCase() !== 'false',
+    // Prefer IMAP_SECURE; fallback to IMAP_TLS; default true
+    secure: ((env.IMAP_SECURE ?? env.IMAP_TLS ?? 'true') as string).toLowerCase() !== 'false',
     user: env.IMAP_USER ?? '',
     password: env.IMAP_PASSWORD ?? '',
-    mailbox: env.IMAP_MAILBOX ?? 'INBOX',
+    mailbox: env.IMAP_MAILBOX ?? env.EMAIL_INGESTION_FOLDER ?? 'INBOX',
     fromFilter: env.IMAP_FROM_FILTER ?? '',
   },
 };
