@@ -733,7 +733,7 @@ const LoginScreen: React.FC<Props> = ({ onLogin }) => {
              <Shield className="w-8 h-8" />
           </div>
           <h1 className="text-3xl font-bold text-slate-800 serif">LexMedical</h1>
-          <p className="text-slate-500 mt-2">מערכת הגנה וניהול סיכונים רפואיים</p>
+          <p className="text-slate-500 mt-2">מרכז ידע משרדי - Lp-Law</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
