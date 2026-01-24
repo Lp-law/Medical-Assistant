@@ -60,6 +60,8 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
   const [emlLoading, setEmlLoading] = useState(false);
   const [emlError, setEmlError] = useState<string | null>(null);
   const [emlSuccess, setEmlSuccess] = useState<string | null>(null);
+  const [emlBatch, setEmlBatch] = useState<Array<{ name: string; status: 'pending' | 'uploading' | 'done' | 'error'; error?: string }>>([]);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [topicsDraft, setTopicsDraft] = useState('');
@@ -244,6 +246,42 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
       setEmlError(err?.message ?? 'upload_eml_failed');
     } finally {
       setEmlLoading(false);
+    }
+  };
+
+  const submitEmlBatch = async (files: File[]) => {
+    const emls = files.filter((f) => (f.name ?? '').toLowerCase().endsWith('.eml'));
+    if (!emls.length) {
+      setEmlError('לא נמצאו קבצי .eml בתיקייה שנבחרה');
+      return;
+    }
+
+    setEmlLoading(true);
+    setEmlError(null);
+    setEmlSuccess(null);
+    setEmlBatch(emls.map((f) => ({ name: f.name, status: 'pending' as const })));
+
+    let ok = 0;
+    for (let i = 0; i < emls.length; i += 1) {
+      const f = emls[i];
+      setEmlBatch((prev) => prev.map((row) => (row.name === f.name ? { ...row, status: 'uploading' } : row)));
+      try {
+        await uploadEml(f);
+        ok += 1;
+        setEmlBatch((prev) => prev.map((row) => (row.name === f.name ? { ...row, status: 'done' } : row)));
+      } catch (err: any) {
+        setEmlBatch((prev) =>
+          prev.map((row) =>
+            row.name === f.name ? { ...row, status: 'error', error: err?.message ?? 'upload_eml_failed' } : row,
+          ),
+        );
+      }
+    }
+
+    setEmlSuccess(`הושלם: ${ok}/${emls.length} קבצי .eml עובדו.`);
+    setEmlLoading(false);
+    if (activeTab === 'search') {
+      await runSearch();
     }
   };
 
@@ -451,7 +489,9 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
         <div className="card-head">
           <div>
             <p className="text-sm font-semibold">ייבוא מייל ידני (.eml)</p>
-            <p className="text-xs text-slate-light">גרור קובץ מייל מהמחשב – המערכת תחלץ טקסט + מצורפים ותעבד כמו IMAP.</p>
+            <p className="text-xs text-slate-light">
+              גרור קובץ מייל מהמחשב – או בחר תיקייה (למשל: <span className="font-mono">CASES</span>) והמערכת תעבד את כל ה־.eml שבתוכה.
+            </p>
           </div>
         </div>
         <div className="card-underline" />
@@ -491,6 +531,54 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
             </div>
             {emlFile && <p className="mt-2 text-[11px] text-slate-light">נבחר: {emlFile.name}</p>}
           </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs font-semibold text-slate-light">ייבוא תיקייה (מומלץ ל־CASES)</p>
+            <div className="flex items-center gap-2">
+              <input
+                ref={folderInputRef}
+                type="file"
+                multiple
+                // @ts-ignore - supported in Chromium browsers (Edge/Chrome)
+                webkitdirectory=""
+                className="hidden"
+                disabled={emlLoading}
+                onChange={(e) => {
+                  const list = Array.from(e.target.files ?? []);
+                  if (!list.length) return;
+                  submitEmlBatch(list).catch(() => undefined);
+                  e.target.value = '';
+                }}
+              />
+              <button
+                type="button"
+                className="btn-outline text-sm px-4 py-2"
+                onClick={() => folderInputRef.current?.click()}
+                disabled={emlLoading}
+              >
+                בחר תיקייה ולעבד הכל
+              </button>
+            </div>
+          </div>
+
+          {emlBatch.length > 0 && (
+            <div className="rounded-card border border-pearl bg-white p-3">
+              <p className="text-xs font-semibold text-slate-light mb-2">סטטוס עיבוד ({emlBatch.length})</p>
+              <div className="max-h-56 overflow-auto space-y-1 text-xs">
+                {emlBatch.map((row) => (
+                  <div key={`eml-${row.name}`} className="flex items-center justify-between gap-3">
+                    <span className="truncate">{row.name}</span>
+                    <span className="shrink-0">
+                      {row.status === 'pending' && 'ממתין'}
+                      {row.status === 'uploading' && 'מעלה/מעבד...'}
+                      {row.status === 'done' && 'הושלם'}
+                      {row.status === 'error' && `שגיאה${row.error ? `: ${row.error}` : ''}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {emlError && (
             <div className="state-block state-block--error text-sm">
