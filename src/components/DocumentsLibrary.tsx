@@ -46,6 +46,8 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [results, setResults] = useState<DocumentRecord[]>([]);
+  const [selectedDoc, setSelectedDoc] = useState<DocumentRecord | null>(null);
+  const [openingAttachmentId, setOpeningAttachmentId] = useState<string | null>(null);
 
   // Upload state
   const [uploadTitle, setUploadTitle] = useState('');
@@ -423,7 +425,14 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
                 <div className="card-accent" />
                 <div className="card-head">
                   <div className="space-y-1">
-                    <p className="text-base font-semibold">{doc.title}</p>
+                    <button
+                      type="button"
+                      className="text-base font-semibold text-right hover:underline"
+                      onClick={() => setSelectedDoc(doc)}
+                      title="פתח תקציר מלא וקובץ"
+                    >
+                      {doc.title}
+                    </button>
                     <p className="text-xs text-slate-light">
                       מקור: {doc.source === 'EMAIL' ? 'מייל' : 'ידני'} · נוצר: {formatDate(doc.createdAt)}{' '}
                       {doc.emailDate ? `· תאריך מייל: ${formatDate(doc.emailDate)}` : ''}
@@ -459,9 +468,16 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
                       <button
                         type="button"
                         className="btn-outline text-[11px] px-4 py-1.5"
-                        onClick={() => openAttachment(doc.attachmentUrl as string, doc.title).catch(() => undefined)}
+                        onClick={async () => {
+                          setOpeningAttachmentId(doc.id);
+                          try {
+                            await openAttachment(doc.attachmentUrl as string, doc.title);
+                          } finally {
+                            setOpeningAttachmentId((prev) => (prev === doc.id ? null : prev));
+                          }
+                        }}
                       >
-                        פתח קובץ
+                        {openingAttachmentId === doc.id ? 'פותח…' : 'פתח קובץ'}
                       </button>
                     )}
                     <button
@@ -470,6 +486,13 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
                       onClick={() => openEditTags(doc)}
                     >
                       ערוך תגיות
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-outline text-[11px] px-4 py-1.5"
+                      onClick={() => setSelectedDoc(doc)}
+                    >
+                      תקציר מלא
                     </button>
                   </div>
                 </div>
@@ -759,6 +782,55 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
       </div>
 
       {activeTab === 'search' ? searchView : uploadView}
+
+      {selectedDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+          <div className="card-shell max-w-2xl w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="card-accent" />
+            <div className="card-head">
+              <div className="space-y-1">
+                <p className="text-base font-semibold">{selectedDoc.title}</p>
+                <p className="text-xs text-slate-light">
+                  מקור: {selectedDoc.source === 'EMAIL' ? 'מייל' : 'ידני'} · נוצר: {formatDate(selectedDoc.createdAt)}{' '}
+                  {selectedDoc.emailDate ? `· תאריך מייל: ${formatDate(selectedDoc.emailDate)}` : ''}
+                </p>
+              </div>
+              <button type="button" onClick={() => setSelectedDoc(null)} className="text-xs text-slate-light hover:text-navy">
+                סגור
+              </button>
+            </div>
+            <div className="card-underline" />
+            <div className="card-body space-y-3 text-sm text-slate">
+              <div>
+                <p className="text-xs font-semibold text-slate-light mb-2">תקציר מלא</p>
+                <p className="whitespace-pre-wrap text-navy">{selectedDoc.summary || 'ללא תמצית'}</p>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-pearl">
+                {selectedDoc.attachmentUrl ? (
+                  <button
+                    type="button"
+                    className="btn-primary text-[11px] px-4 py-2"
+                    onClick={async () => {
+                      setOpeningAttachmentId(selectedDoc.id);
+                      try {
+                        await openAttachment(selectedDoc.attachmentUrl as string, selectedDoc.title);
+                      } finally {
+                        setOpeningAttachmentId((prev) => (prev === selectedDoc.id ? null : prev));
+                      }
+                    }}
+                  >
+                    {openingAttachmentId === selectedDoc.id ? 'פותח…' : 'פתח קובץ מצורף'}
+                  </button>
+                ) : (
+                  <span className="text-xs text-slate-light">אין קובץ מצורף למסמך זה</span>
+                )}
+              </div>
+            </div>
+          </div>
+          <button className="fixed inset-0 cursor-default" aria-label="סגור" onClick={() => setSelectedDoc(null)} />
+        </div>
+      )}
 
       {editingId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">

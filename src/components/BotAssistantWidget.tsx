@@ -78,6 +78,7 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
   const [history, setHistory] = useState<ChatTurn[]>([]);
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
   const [openingAttachmentId, setOpeningAttachmentId] = useState<string | null>(null);
+  const [selectedDoc, setSelectedDoc] = useState<AssistantDocumentHit | null>(null);
 
   const isOpen = controlledOpen ?? internalOpen;
   const setOpen = (next: boolean) => {
@@ -267,13 +268,26 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
                                   <p className="text-xs font-semibold text-slate-light">תוצאות מובילות</p>
                                   <div className="space-y-2">
                                     {t.documents.map((d) => (
-                                      <div key={d.id} className="rounded-card border border-pearl bg-white p-3">
+                                      <div
+                                        key={d.id}
+                                        className="rounded-card border border-pearl bg-white p-3 hover:shadow-card-xl transition cursor-pointer"
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={() => setSelectedDoc(d)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter' || e.key === ' ') setSelectedDoc(d);
+                                        }}
+                                        title="פתח פרטי מסמך"
+                                      >
                                         <div className="flex items-start justify-between gap-3">
                                           <div>
                                             <button
                                               type="button"
                                               className="text-sm font-semibold text-navy hover:underline text-right"
-                                              onClick={() => setExpandedDocId((prev) => (prev === d.id ? null : d.id))}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedDoc(d);
+                                              }}
                                               title="לחץ להצגת תקציר וקישור לקובץ"
                                             >
                                               {d.title}
@@ -286,7 +300,10 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
                                             <button
                                               type="button"
                                               className="text-xs text-slate hover:text-navy transition inline-flex items-center gap-1"
-                                              onClick={() => onOpenDocumentsWithQuery(d.title, d.categoryName)}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                onOpenDocumentsWithQuery(d.title, d.categoryName);
+                                              }}
                                               title="פתח במסך מסמכים"
                                             >
                                               <Search className="w-4 h-4" />
@@ -296,6 +313,8 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
                                               <button
                                                 type="button"
                                                 onClick={async () => {
+                                                  // prevent opening the modal when clicking the button
+                                                  // (the parent card is clickable)
                                                   if (!d.attachmentUrl) return;
                                                   setOpeningAttachmentId(d.id);
                                                   try {
@@ -306,6 +325,7 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
                                                 }}
                                                 className="rounded-full bg-navy text-gold px-3 py-1.5 text-xs font-semibold hover:bg-navy/90 transition inline-flex items-center gap-1"
                                                 title="פתח קובץ מצורף"
+                                                onClickCapture={(e) => e.stopPropagation()}
                                               >
                                                 <ExternalLink className="w-4 h-4" />
                                                 {openingAttachmentId === d.id ? 'פותח…' : 'פתח קובץ'}
@@ -323,36 +343,13 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
                                             <button
                                               type="button"
                                               className="text-[11px] text-navy hover:underline"
-                                              onClick={() => setExpandedDocId((prev) => (prev === d.id ? null : d.id))}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedDoc(d);
+                                              }}
                                             >
-                                              {expandedDocId === d.id ? 'הצג פחות' : 'הצג תקציר מלא'}
+                                              הצג תקציר מלא
                                             </button>
-                                          </div>
-                                        )}
-                                        {expandedDocId === d.id && (
-                                          <div className="mt-3 pt-3 border-t border-pearl">
-                                            <p className="text-[11px] font-semibold text-slate-light mb-1">תקציר מלא</p>
-                                            <p className="text-xs text-slate whitespace-pre-wrap">{d.summary || 'ללא תקציר'}</p>
-                                            {d.attachmentUrl && (
-                                              <div className="mt-3 flex justify-end">
-                                                <button
-                                                  type="button"
-                                                  onClick={async () => {
-                                                    if (!d.attachmentUrl) return;
-                                                    setOpeningAttachmentId(d.id);
-                                                    try {
-                                                      await openAttachment(d.attachmentUrl, d.title);
-                                                    } finally {
-                                                      setOpeningAttachmentId((prev) => (prev === d.id ? null : prev));
-                                                    }
-                                                  }}
-                                                  className="rounded-full bg-gold text-navy px-4 py-2 text-xs font-semibold hover:bg-gold-light transition inline-flex items-center gap-2"
-                                                >
-                                                  <ExternalLink className="w-4 h-4" />
-                                                  {openingAttachmentId === d.id ? 'פותח…' : 'פתח קובץ מצורף'}
-                                                </button>
-                                              </div>
-                                            )}
                                           </div>
                                         )}
                                       </div>
@@ -387,6 +384,76 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
                   טיפ: כתוב משפט אחד עם המילים המרכזיות (אבחנה/מומחה/סוג מסמך/הליך) ולחץ “חפש”.
                 </p>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedDoc && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          dir="rtl"
+          onClick={() => setSelectedDoc(null)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-card bg-white shadow-card-xl border border-pearl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-pearl">
+              <div className="space-y-1">
+                <p className="text-base font-semibold text-navy">{selectedDoc.title}</p>
+                <p className="text-xs text-slate">
+                  {selectedDoc.categoryName} • {formatDate(selectedDoc.createdAt)} • {selectedDoc.source}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="text-slate hover:text-navy transition"
+                onClick={() => setSelectedDoc(null)}
+                aria-label="סגור"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-4">
+              <div>
+                <p className="text-xs font-semibold text-slate-light mb-2">תקציר מלא</p>
+                <p className="text-sm text-slate whitespace-pre-wrap">{selectedDoc.summary || 'ללא תקציר'}</p>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-pearl">
+                <button
+                  type="button"
+                  className="btn-outline text-[11px] px-4 py-2 inline-flex items-center gap-2"
+                  onClick={() => onOpenDocumentsWithQuery(selectedDoc.title, selectedDoc.categoryName)}
+                >
+                  <Search className="w-4 h-4" />
+                  פתח במסך מסמכים
+                </button>
+
+                {selectedDoc.attachmentUrl ? (
+                  <button
+                    type="button"
+                    className="btn-primary text-[11px] px-4 py-2 inline-flex items-center gap-2"
+                    onClick={async () => {
+                      setOpeningAttachmentId(selectedDoc.id);
+                      try {
+                        await openAttachment(selectedDoc.attachmentUrl as string, selectedDoc.title);
+                      } finally {
+                        setOpeningAttachmentId((prev) => (prev === selectedDoc.id ? null : prev));
+                      }
+                    }}
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    {openingAttachmentId === selectedDoc.id ? 'פותח…' : 'פתח קובץ מצורף'}
+                  </button>
+                ) : (
+                  <span className="text-xs text-slate-light">אין קובץ מצורף למסמך זה</span>
+                )}
+              </div>
             </div>
           </div>
         </div>
