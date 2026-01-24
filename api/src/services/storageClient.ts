@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { config } from './env';
 import fs from 'fs/promises';
 import path from 'path';
+import os from 'os';
 
 const { connectionString, container } = config.storage;
 
@@ -11,7 +12,10 @@ if (connectionString) {
   blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
 }
 
-const LOCAL_UPLOADS_DIR = path.resolve(process.cwd(), 'uploads');
+// On platforms like Render, the project directory may not be writable. Use tmp by default.
+const LOCAL_UPLOADS_DIR = process.env.LOCAL_UPLOADS_DIR
+  ? path.resolve(process.env.LOCAL_UPLOADS_DIR)
+  : path.join(os.tmpdir(), 'lexmedical-uploads');
 
 const sanitizeFilename = (filename: string): string => {
   const base = (filename ?? 'attachment').toString().trim() || 'attachment';

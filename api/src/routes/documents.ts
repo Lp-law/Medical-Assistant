@@ -7,6 +7,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { createReadStream } from 'fs';
 import { BlobServiceClient } from '@azure/storage-blob';
+import os from 'os';
 import { prisma } from '../services/prisma';
 import { requireAuth, requireRole } from '../middleware/auth';
 import { uploadFileToStorage } from '../services/storageClient';
@@ -69,7 +70,9 @@ const buildPublicBaseUrl = (req: any): string => `${req.protocol}://${req.get('h
 const buildAttachmentDownloadUrl = (req: any, id: string): string =>
   `${buildPublicBaseUrl(req)}/api/documents/${encodeURIComponent(id)}/attachment`;
 
-const LOCAL_UPLOADS_DIR = path.resolve(process.cwd(), 'uploads');
+const LOCAL_UPLOADS_DIR = process.env.LOCAL_UPLOADS_DIR
+  ? path.resolve(process.env.LOCAL_UPLOADS_DIR)
+  : path.join(os.tmpdir(), 'lexmedical-uploads');
 
 const tryParseAzureBlobNameFromUrl = (url: string): string | null => {
   try {
