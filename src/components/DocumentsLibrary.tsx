@@ -4,6 +4,7 @@ import { CategoryRecord, DocumentRecord } from '../types';
 import { createCategory, listCategories, searchDocuments, updateDocumentTags, uploadDocument, uploadEml } from '../services/documentsApi';
 import LegalDisclaimer from './LegalDisclaimer';
 import { useAuth } from '../context/AuthContext';
+import { openAttachment } from '../utils/openAttachment';
 
 const badgeForCategory = (name?: string): string => {
   if (!name) return 'badge-muted';
@@ -455,14 +456,13 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
                   )}
                   <div className="flex flex-wrap gap-2 text-xs">
                     {doc.attachmentUrl && (
-                      <a
+                      <button
+                        type="button"
                         className="btn-outline text-[11px] px-4 py-1.5"
-                        href={doc.attachmentUrl}
-                        target="_blank"
-                        rel="noreferrer"
+                        onClick={() => openAttachment(doc.attachmentUrl as string, doc.title).catch(() => undefined)}
                       >
                         פתח קובץ
-                      </a>
+                      </button>
                     )}
                     <button
                       type="button"

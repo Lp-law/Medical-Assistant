@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Bot, Send, X, Search, ExternalLink } from 'lucide-react';
 import { assistantSearch, AssistantDocumentHit } from '../services/assistantApi';
+import { openAttachment } from '../utils/openAttachment';
 
 type Props = {
   onOpenDocumentsWithQuery: (query: string, categoryName?: string) => void;
@@ -76,6 +77,7 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
   const [categoryKey, setCategoryKey] = useState<BotCategoryKey>('all');
   const [history, setHistory] = useState<ChatTurn[]>([]);
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
+  const [openingAttachmentId, setOpeningAttachmentId] = useState<string | null>(null);
 
   const isOpen = controlledOpen ?? internalOpen;
   const setOpen = (next: boolean) => {
@@ -291,16 +293,23 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
                                               מסמכים
                                             </button>
                                             {d.attachmentUrl ? (
-                                              <a
-                                                href={d.attachmentUrl}
-                                                target="_blank"
-                                                rel="noreferrer"
+                                              <button
+                                                type="button"
+                                                onClick={async () => {
+                                                  if (!d.attachmentUrl) return;
+                                                  setOpeningAttachmentId(d.id);
+                                                  try {
+                                                    await openAttachment(d.attachmentUrl, d.title);
+                                                  } finally {
+                                                    setOpeningAttachmentId((prev) => (prev === d.id ? null : prev));
+                                                  }
+                                                }}
                                                 className="rounded-full bg-navy text-gold px-3 py-1.5 text-xs font-semibold hover:bg-navy/90 transition inline-flex items-center gap-1"
                                                 title="פתח קובץ מצורף"
                                               >
                                                 <ExternalLink className="w-4 h-4" />
-                                                פתח קובץ
-                                              </a>
+                                                {openingAttachmentId === d.id ? 'פותח…' : 'פתח קובץ'}
+                                              </button>
                                             ) : (
                                               <span className="text-[11px] text-slate-light">אין קובץ</span>
                                             )}
@@ -326,15 +335,22 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
                                             <p className="text-xs text-slate whitespace-pre-wrap">{d.summary || 'ללא תקציר'}</p>
                                             {d.attachmentUrl && (
                                               <div className="mt-3 flex justify-end">
-                                                <a
-                                                  href={d.attachmentUrl}
-                                                  target="_blank"
-                                                  rel="noreferrer"
+                                                <button
+                                                  type="button"
+                                                  onClick={async () => {
+                                                    if (!d.attachmentUrl) return;
+                                                    setOpeningAttachmentId(d.id);
+                                                    try {
+                                                      await openAttachment(d.attachmentUrl, d.title);
+                                                    } finally {
+                                                      setOpeningAttachmentId((prev) => (prev === d.id ? null : prev));
+                                                    }
+                                                  }}
                                                   className="rounded-full bg-gold text-navy px-4 py-2 text-xs font-semibold hover:bg-gold-light transition inline-flex items-center gap-2"
                                                 >
                                                   <ExternalLink className="w-4 h-4" />
-                                                  פתח קובץ מצורף
-                                                </a>
+                                                  {openingAttachmentId === d.id ? 'פותח…' : 'פתח קובץ מצורף'}
+                                                </button>
                                               </div>
                                             )}
                                           </div>

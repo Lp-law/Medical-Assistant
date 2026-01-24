@@ -35,4 +35,10 @@ export const authFetch = (path: string, init?: RequestInit): Promise<Response> =
   return fetch(`${API_BASE_URL}${path}`, withAuth(init));
 };
 
+// Like authFetch(), but supports absolute URLs (e.g. when API returns a full https://... URL).
+export const authorizedFetch = (urlOrPath: string, init?: RequestInit): Promise<Response> => {
+  const url = /^https?:\/\//i.test(urlOrPath) ? urlOrPath : `${API_BASE_URL}${urlOrPath}`;
+  return fetch(url, withAuth(init));
+};
+
 export const isApiConfigured = (): boolean => Boolean(API_BASE_URL);
