@@ -1,10 +1,17 @@
 import { NextFunction, Request, Response } from 'express';
 import { AuthenticatedUser, verifyAccessToken } from '../services/authService';
 
+const COOKIE_NAME = 'lm_access_token';
+
 const extractToken = (req: Request): string | null => {
   const header = req.get('authorization');
   if (header && header.startsWith('Bearer ')) {
     return header.slice(7).trim();
+  }
+  // Fallback to httpOnly cookie-based session
+  const cookieToken = (req as any)?.cookies?.[COOKIE_NAME];
+  if (typeof cookieToken === 'string' && cookieToken.trim()) {
+    return cookieToken.trim();
   }
   return null;
 };

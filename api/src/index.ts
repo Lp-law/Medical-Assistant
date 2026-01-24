@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
+import cookieParser from 'cookie-parser';
 import { authRouter } from './routes/auth';
 import { ingestRouter } from './routes/ingest';
 import { casesRouter } from './routes/cases';
@@ -18,6 +19,9 @@ import { assistantRouter } from './routes/assistant';
 
 const app = express();
 
+// Needed for secure cookies behind Render's reverse proxy
+app.set('trust proxy', 1);
+
 app.use(
   cors({
     origin: config.corsOrigins,
@@ -25,6 +29,7 @@ app.use(
   })
 );
 app.use(express.json({ limit: '10mb' }));
+app.use(cookieParser());
 app.use(morgan('dev'));
 
 const requireDatabase: express.RequestHandler = (req, res, next) => {
