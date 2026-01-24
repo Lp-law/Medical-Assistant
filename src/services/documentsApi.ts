@@ -57,6 +57,22 @@ export const uploadDocument = async (input: UploadDocumentInput): Promise<Docume
   return payload.document;
 };
 
+export interface UploadEmlResponse {
+  documents: DocumentRecord[];
+  attachmentsProcessed: number;
+}
+
+export const uploadEml = async (file: File): Promise<UploadEmlResponse> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await authFetch('/documents/upload-eml', { method: 'POST', body: formData });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(text || 'upload_eml_failed');
+  }
+  return (await response.json()) as UploadEmlResponse;
+};
+
 export const listCategories = async (): Promise<CategoryRecord[]> => {
   const payload = await apiRequest<{ categories: CategoryRecord[] }>('/categories', { method: 'GET' });
   return payload.categories ?? [];

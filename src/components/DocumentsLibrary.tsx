@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Search, UploadCloud, FileText, AlertTriangle } from 'lucide-react';
 import { CategoryRecord, DocumentRecord } from '../types';
-import { createCategory, listCategories, searchDocuments, updateDocumentTags, uploadDocument } from '../services/documentsApi';
+import { createCategory, listCategories, searchDocuments, updateDocumentTags, uploadDocument, uploadEml } from '../services/documentsApi';
 import LegalDisclaimer from './LegalDisclaimer';
 import { useAuth } from '../context/AuthContext';
 
@@ -54,6 +54,12 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+
+  // EML import state
+  const [emlFile, setEmlFile] = useState<File | null>(null);
+  const [emlLoading, setEmlLoading] = useState(false);
+  const [emlError, setEmlError] = useState<string | null>(null);
+  const [emlSuccess, setEmlSuccess] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [topicsDraft, setTopicsDraft] = useState('');
@@ -219,6 +225,25 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
       setUploadError(err?.message ?? 'upload_failed');
     } finally {
       setUploadLoading(false);
+    }
+  };
+
+  const submitEml = async (file: File) => {
+    setEmlLoading(true);
+    setEmlError(null);
+    setEmlSuccess(null);
+    try {
+      const result = await uploadEml(file);
+      setEmlSuccess(`הושלם: עובדו ${result.attachmentsProcessed} מצורפים ונוצרו ${result.documents?.length ?? 0} מסמכים.`);
+      setEmlFile(null);
+      // Optional: refresh search results if already in search tab
+      if (activeTab === 'search') {
+        await runSearch();
+      }
+    } catch (err: any) {
+      setEmlError(err?.message ?? 'upload_eml_failed');
+    } finally {
+      setEmlLoading(false);
     }
   };
 
@@ -421,6 +446,69 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
 
   const uploadView = (
     <div className="space-y-6">
+      <div className="card-shell">
+        <div className="card-accent" />
+        <div className="card-head">
+          <div>
+            <p className="text-sm font-semibold">ייבוא מייל ידני (.eml)</p>
+            <p className="text-xs text-slate-light">גרור קובץ מייל מהמחשב – המערכת תחלץ טקסט + מצורפים ותעבד כמו IMAP.</p>
+          </div>
+        </div>
+        <div className="card-underline" />
+        <div className="card-body space-y-3">
+          <div
+            className={`rounded-card border border-pearl bg-pearl/40 p-6 text-center text-sm text-slate ${
+              emlLoading ? 'opacity-70' : 'hover:bg-pearl/60'
+            }`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const f = e.dataTransfer?.files?.[0] ?? null;
+              if (!f) return;
+              setEmlFile(f);
+              submitEml(f).catch(() => undefined);
+            }}
+          >
+            <p className="font-semibold text-navy">גרור ושחרר כאן קובץ .eml</p>
+            <p className="text-xs text-slate-light mt-2">או בחר קובץ מהמחשב</p>
+            <div className="mt-3">
+              <input
+                type="file"
+                accept=".eml,message/rfc822"
+                disabled={emlLoading}
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  if (!f) return;
+                  setEmlFile(f);
+                  submitEml(f).catch(() => undefined);
+                  e.target.value = '';
+                }}
+              />
+            </div>
+            {emlFile && <p className="mt-2 text-[11px] text-slate-light">נבחר: {emlFile.name}</p>}
+          </div>
+
+          {emlError && (
+            <div className="state-block state-block--error text-sm">
+              <AlertTriangle className="state-block__icon" aria-hidden="true" />
+              <p className="state-block__title">ייבוא מייל נכשל</p>
+              <p className="state-block__description">{emlError}</p>
+            </div>
+          )}
+          {emlSuccess && (
+            <div className="state-block text-sm">
+              <UploadCloud className="state-block__icon" aria-hidden="true" />
+              <p className="state-block__title">ייבוא הושלם</p>
+              <p className="state-block__description">{emlSuccess}</p>
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="card-shell">
         <div className="card-accent" />
         <div className="card-head">

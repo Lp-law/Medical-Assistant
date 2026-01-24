@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import { v4 as uuid } from 'uuid';
+import { simpleParser } from 'mailparser';
 import { prisma } from '../services/prisma';
 import { requireAuth, requireRole } from '../middleware/auth';
 import { uploadFileToStorage } from '../services/storageClient';
@@ -55,6 +56,31 @@ const resolveCategoryId = async (input: { categoryId?: string; categoryName?: st
   return created.id;
 };
 
+type EmlAttachmentCandidate = { filename: string; contentType?: string; content: Buffer };
+
+const isSupportedAttachment = (filename: string, contentType?: string): boolean => {
+  const lower = (filename ?? '').toLowerCase();
+  if (lower.endsWith('.pdf') || lower.endsWith('.docx') || lower.endsWith('.doc')) return true;
+  if (!contentType) return false;
+  return (
+    contentType === 'application/pdf' ||
+    contentType === 'application/msword' ||
+    contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  );
+};
+
+const collectEmlAttachments = (parsed: any): EmlAttachmentCandidate[] => {
+  const attachments = Array.isArray(parsed?.attachments) ? parsed.attachments : [];
+  return attachments
+    .map((att: any) => ({
+      filename: att?.filename || 'attachment',
+      contentType: att?.contentType,
+      content: Buffer.isBuffer(att?.content) ? att.content : Buffer.from(att?.content ?? ''),
+    }))
+    .filter((att: EmlAttachmentCandidate) => Boolean(att.filename && att.content?.length))
+    .filter((att: EmlAttachmentCandidate) => isSupportedAttachment(att.filename, att.contentType));
+};
+
 // Manual upload (PDF/DOCX)
 documentsRouter.post('/upload', upload.single('file'), async (req, res) => {
   if (!req.file) {
@@ -103,6 +129,83 @@ documentsRouter.post('/upload', upload.single('file'), async (req, res) => {
   });
 
   res.status(201).json({ document: created });
+});
+
+// Manual email import (.eml) → parse body + attachments, ingest like IMAP
+documentsRouter.post('/upload-eml', upload.single('file'), async (req, res) => {
+  if (!req.file) {
+    res.status(400).json({ error: 'file_required' });
+    return;
+  }
+  const name = (req.file.originalname ?? '').toLowerCase();
+  const isEml = name.endsWith('.eml') || req.file.mimetype === 'message/rfc822';
+  if (!isEml) {
+    res.status(400).json({ error: 'eml_required' });
+    return;
+  }
+
+  let parsed: any;
+  try {
+    parsed = await simpleParser(req.file.buffer);
+  } catch (error) {
+    console.warn('[documents/upload-eml] failed to parse eml', error);
+    res.status(400).json({ error: 'eml_parse_failed' });
+    return;
+  }
+
+  const bodyText = (parsed?.text ?? '').toString();
+  const bodySummary = extractSummaryFromEmailBody(bodyText) ?? '';
+  const attachments = collectEmlAttachments(parsed);
+  if (!attachments.length) {
+    res.status(400).json({ error: 'attachment_required' });
+    return;
+  }
+
+  const categoryId = await resolveCategoryId({ categoryName: DEFAULT_CATEGORY_NAME });
+  const createdDocs: any[] = [];
+
+  let idx = 0;
+  for (const attachment of attachments) {
+    idx += 1;
+    const attachmentUrl = await uploadFileToStorage(
+      attachment.content,
+      attachment.filename,
+      attachment.contentType ?? 'application/octet-stream',
+    );
+
+    let attachmentText = '';
+    try {
+      attachmentText = await extractTextFromAttachment(attachment.content, attachment.filename, attachment.contentType);
+    } catch (error) {
+      console.warn('[documents/upload-eml] attachment text extraction failed', error);
+      attachmentText = '';
+    }
+
+    const autoSummary = bodySummary.trim() ? bodySummary.trim() : summarizeFromText(attachmentText);
+    const mergedContent = [bodyText?.trim(), attachmentText?.trim()].filter(Boolean).join('\n\n').slice(0, 100_000);
+    const classifierInput = `${autoSummary}\n${mergedContent}`.slice(0, 20000);
+    const { topics, keywords } = classifyText(classifierInput);
+
+    const created = await prisma.document.create({
+      data: {
+        id: uuid(),
+        title: attachment.filename || 'email-attachment',
+        summary: autoSummary ?? '',
+        content: mergedContent ? mergedContent : null,
+        categoryId,
+        keywords,
+        topics,
+        source: mapSource('email'),
+        emailMessageId: `eml:${uuid()}:${idx}`,
+        attachmentUrl,
+        attachmentMime: attachment.contentType ?? null,
+      },
+      include: { category: true },
+    });
+    createdDocs.push(created);
+  }
+
+  res.status(201).json({ documents: createdDocs, attachmentsProcessed: createdDocs.length });
 });
 
 // Free-text search + filters
