@@ -3,6 +3,10 @@ import multer from 'multer';
 import { z } from 'zod';
 import { v4 as uuid } from 'uuid';
 import { simpleParser } from 'mailparser';
+import path from 'path';
+import fs from 'fs/promises';
+import { createReadStream } from 'fs';
+import { BlobServiceClient } from '@azure/storage-blob';
 import { prisma } from '../services/prisma';
 import { requireAuth, requireRole } from '../middleware/auth';
 import { uploadFileToStorage } from '../services/storageClient';
@@ -10,6 +14,7 @@ import { classifyText } from '../services/documentClassifier';
 import { extractTextFromAttachment } from '../services/textExtraction';
 import { extractSummaryFromEmailBody, summarizeFromText } from '../services/summaryUtils';
 import { Prisma } from '@prisma/client';
+import { config } from '../services/env';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
@@ -59,6 +64,26 @@ export const documentsRouter = Router();
 documentsRouter.use(requireAuth);
 
 const DEFAULT_CATEGORY_NAME = 'פסקי דין';
+
+const buildPublicBaseUrl = (req: any): string => `${req.protocol}://${req.get('host')}`;
+const buildAttachmentDownloadUrl = (req: any, id: string): string =>
+  `${buildPublicBaseUrl(req)}/api/documents/${encodeURIComponent(id)}/attachment`;
+
+const LOCAL_UPLOADS_DIR = path.resolve(process.cwd(), 'uploads');
+
+const tryParseAzureBlobNameFromUrl = (url: string): string | null => {
+  try {
+    const u = new URL(url);
+    const pathname = decodeURIComponent(u.pathname || '');
+    // Expected: /<container>/<blobName>
+    const prefix = `/${config.storage.container}/`;
+    if (!pathname.startsWith(prefix)) return null;
+    const blobName = pathname.slice(prefix.length);
+    return blobName || null;
+  } catch {
+    return null;
+  }
+};
 
 const resolveCategoryId = async (input: { categoryId?: string; categoryName?: string }): Promise<string> => {
   if (input.categoryId) {
@@ -163,7 +188,85 @@ documentsRouter.post('/upload', upload.single('file'), async (req, res) => {
     include: { category: true },
   });
 
-  res.status(201).json({ document: created });
+  res.status(201).json({
+    document: {
+      ...created,
+      attachmentUrl: created.attachmentUrl ? buildAttachmentDownloadUrl(req, created.id) : null,
+    },
+  });
+});
+
+// Download attachment (works for Azure blobs and local fallback storage)
+documentsRouter.get('/:id/attachment', async (req, res) => {
+  const id = req.params.id;
+  if (!id) {
+    res.status(400).json({ error: 'document_id_required' });
+    return;
+  }
+
+  const doc = await prisma.document.findUnique({
+    where: { id },
+    select: { id: true, title: true, attachmentUrl: true, attachmentMime: true },
+  });
+  if (!doc || !doc.attachmentUrl) {
+    res.status(404).json({ error: 'attachment_not_found' });
+    return;
+  }
+
+  const mime = doc.attachmentMime ?? 'application/octet-stream';
+  res.setHeader('Content-Type', mime);
+  // Force download to avoid opening binary content in-browser unexpectedly.
+  const fallbackName = (doc.title ?? 'attachment').toString().slice(0, 180);
+  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fallbackName)}`);
+
+  // Local fallback storage: "local:<storedName>"
+  if (doc.attachmentUrl.startsWith('local:')) {
+    const storedName = doc.attachmentUrl.slice('local:'.length);
+    const fullPath = path.join(LOCAL_UPLOADS_DIR, storedName);
+    try {
+      // Ensure file exists before streaming
+      await fs.stat(fullPath);
+      createReadStream(fullPath).pipe(res);
+      return;
+    } catch (e) {
+      res.status(404).json({ error: 'attachment_file_missing' });
+      return;
+    }
+  }
+
+  // Azure blob storage (preferred) – try server-side download using credentials if configured.
+  const blobName = tryParseAzureBlobNameFromUrl(doc.attachmentUrl);
+  if (blobName && config.storage.connectionString) {
+    try {
+      const svc = BlobServiceClient.fromConnectionString(config.storage.connectionString);
+      const containerClient = svc.getContainerClient(config.storage.container);
+      const blobClient = containerClient.getBlobClient(blobName);
+      const download = await blobClient.download();
+      if (!download.readableStreamBody) {
+        res.status(502).json({ error: 'attachment_download_failed' });
+        return;
+      }
+      download.readableStreamBody.pipe(res);
+      return;
+    } catch (e) {
+      console.warn('[documents/attachment] azure download failed, falling back to direct fetch', e);
+    }
+  }
+
+  // Last resort: direct HTTP fetch (works for public blobs or signed URLs)
+  try {
+    const r = await fetch(doc.attachmentUrl);
+    if (!r.ok || !r.body) {
+      res.status(502).json({ error: 'attachment_fetch_failed' });
+      return;
+    }
+    const { Readable } = await import('stream');
+    Readable.fromWeb(r.body as unknown as any).pipe(res);
+    return;
+  } catch (e) {
+    res.status(502).json({ error: 'attachment_fetch_failed' });
+    return;
+  }
 });
 
 // Manual email import (.eml) → parse body + attachments, ingest like IMAP
@@ -314,6 +417,7 @@ documentsRouter.get('/search', async (req, res) => {
     documents: documents.map((row) => ({
       ...row,
       category: { id: row.category_id, name: row.category_name },
+      attachmentUrl: row.attachmentUrl ? buildAttachmentDownloadUrl(req, String(row.id)) : null,
     })),
     pagination: { limit, offset, total },
   });
@@ -329,7 +433,13 @@ documentsRouter.get('/', async (req, res) => {
     take: limit,
     include: { category: true },
   });
-  res.json({ documents, pagination: { limit, offset, count: documents.length } });
+  res.json({
+    documents: documents.map((d) => ({
+      ...d,
+      attachmentUrl: d.attachmentUrl ? buildAttachmentDownloadUrl(req, d.id) : null,
+    })),
+    pagination: { limit, offset, count: documents.length },
+  });
 });
 
 const tagsSchema = z.object({

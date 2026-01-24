@@ -42,6 +42,11 @@ const previewText = (text: string, max = 180): string => {
   return `${t.slice(0, Math.max(20, max - 1))}…`;
 };
 
+const isLongText = (text: string, max = 180): boolean => {
+  const t = (text ?? '').replace(/\s+/g, ' ').trim();
+  return t.length > max;
+};
+
 type BotCategoryKey = 'all' | 'judgments' | 'damages' | 'opinions' | 'summaries';
 const CATEGORY_NAME: Record<Exclude<BotCategoryKey, 'all'>, string> = {
   judgments: 'פסקי דין',
@@ -304,6 +309,17 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
                                         <p className="text-xs text-slate mt-2">
                                           {expandedDocId === d.id ? (d.summary || 'ללא תקציר') : previewText(d.summary || 'ללא תקציר')}
                                         </p>
+                                        {isLongText(d.summary || '', 180) && (
+                                          <div className="mt-1 flex justify-end">
+                                            <button
+                                              type="button"
+                                              className="text-[11px] text-navy hover:underline"
+                                              onClick={() => setExpandedDocId((prev) => (prev === d.id ? null : d.id))}
+                                            >
+                                              {expandedDocId === d.id ? 'הצג פחות' : 'הצג תקציר מלא'}
+                                            </button>
+                                          </div>
+                                        )}
                                         {expandedDocId === d.id && (
                                           <div className="mt-3 pt-3 border-t border-pearl">
                                             <p className="text-[11px] font-semibold text-slate-light mb-1">תקציר מלא</p>

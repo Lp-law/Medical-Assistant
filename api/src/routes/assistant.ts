@@ -8,6 +8,10 @@ import { generateSearchQueries } from '../services/openAIClient';
 const router = Router();
 router.use(requireAuth);
 
+const buildPublicBaseUrl = (req: any): string => `${req.protocol}://${req.get('host')}`;
+const buildAttachmentDownloadUrl = (req: any, id: string): string =>
+  `${buildPublicBaseUrl(req)}/api/documents/${encodeURIComponent(id)}/attachment`;
+
 const bodySchema = z.object({
   question: z.string().min(3).max(2000),
   limit: z.number().int().min(1).max(50).optional(),
@@ -140,7 +144,10 @@ router.post('/search', async (req, res) => {
   const documents = Array.from(hitCounts.values())
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
-    .map((x) => x.hit);
+    .map((x) => ({
+      ...x.hit,
+      attachmentUrl: x.hit.attachmentUrl ? buildAttachmentDownloadUrl(req, x.hit.id) : null,
+    }));
 
   res.json({
     queries: effectiveQueries,
