@@ -6,7 +6,24 @@ import { requireAuth, requireRole } from '../middleware/auth';
 export const categoriesRouter = Router();
 categoriesRouter.use(requireAuth);
 
+const DEFAULT_CATEGORIES = ['פסקי דין', 'ספרות', 'תחשיבי נזק', 'סיכומים', 'חוות דעת'] as const;
+
+const ensureDefaultCategories = async (): Promise<void> => {
+  await Promise.all(
+    DEFAULT_CATEGORIES.map(async (name) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      await prisma.category.upsert({
+        where: { name: trimmed },
+        update: {},
+        create: { name: trimmed },
+      });
+    }),
+  );
+};
+
 categoriesRouter.get('/', async (_req, res) => {
+  await ensureDefaultCategories();
   const categories = await prisma.category.findMany({ orderBy: { name: 'asc' } });
   res.json({ categories });
 });
