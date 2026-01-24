@@ -14,6 +14,41 @@ const bodySchema = z.object({
   categoryName: z.string().min(1).max(120).optional(),
 });
 
+const unwrapQuotedPhrase = (input: string): string => {
+  const s = (input ?? '').trim();
+  if (!s) return '';
+  const pairs: Array<[string, string]> = [
+    ['"', '"'],
+    ['“', '”'],
+    ['״', '״'],
+  ];
+  for (const [open, close] of pairs) {
+    if (s.startsWith(open) && s.endsWith(close) && s.length >= open.length + close.length + 1) {
+      return s.slice(open.length, s.length - close.length).trim();
+    }
+  }
+  return s;
+};
+
+const extractQuotedPhrases = (input: string): string[] => {
+  const s = (input ?? '').trim();
+  if (!s) return [];
+  const phrases: string[] = [];
+  // "phrase"
+  for (const match of s.matchAll(/"([^"]{2,200})"/g)) {
+    phrases.push(match[1].trim());
+  }
+  // “phrase”
+  for (const match of s.matchAll(/“([^”]{2,200})”/g)) {
+    phrases.push(match[1].trim());
+  }
+  // ״phrase״ (Hebrew gershayim used as quotes)
+  for (const match of s.matchAll(/״([^״]{2,200})״/g)) {
+    phrases.push(match[1].trim());
+  }
+  return Array.from(new Set(phrases.filter(Boolean)));
+};
+
 type AssistantDocumentHit = {
   id: string;
   title: string;
@@ -29,7 +64,8 @@ const searchDocumentsByQuery = async (
   limit: number,
   categoryName?: string,
 ): Promise<AssistantDocumentHit[]> => {
-  const ilike = `%${q}%`;
+  const normalizedQ = unwrapQuotedPhrase(q);
+  const ilike = `%${normalizedQ}%`;
   const categoryNameVal = categoryName ? `%${categoryName}%` : null;
   const rows = await prisma.$queryRaw<any[]>(
     Prisma.sql`
@@ -79,7 +115,14 @@ router.post('/search', async (req, res) => {
   const categoryName = parsed.data.categoryName?.trim() || undefined;
 
   const queries = await generateSearchQueries(question);
-  const effectiveQueries = queries.length ? queries : [question];
+  const quotedPhrases = extractQuotedPhrases(question);
+  const effectiveQueries = [
+    ...quotedPhrases,
+    ...(queries.length ? queries : [question]),
+    unwrapQuotedPhrase(question),
+  ]
+    .map((q) => q.trim())
+    .filter(Boolean);
 
   const hitCounts = new Map<string, { hit: AssistantDocumentHit; score: number }>();
   for (const q of effectiveQueries.slice(0, 5)) {

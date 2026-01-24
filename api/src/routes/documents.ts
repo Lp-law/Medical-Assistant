@@ -33,6 +33,22 @@ const searchSchema = z.object({
 
 const mapSource = (value: 'email' | 'manual') => (value === 'email' ? ('EMAIL' as const) : ('MANUAL' as const));
 
+const unwrapQuotedPhrase = (input: string): string => {
+  const s = (input ?? '').trim();
+  if (!s) return '';
+  const pairs: Array<[string, string]> = [
+    ['"', '"'],
+    ['“', '”'],
+    ['״', '״'],
+  ];
+  for (const [open, close] of pairs) {
+    if (s.startsWith(open) && s.endsWith(close) && s.length >= open.length + close.length + 1) {
+      return s.slice(open.length, s.length - close.length).trim();
+    }
+  }
+  return s;
+};
+
 const parseDateOrUndefined = (value?: string): Date | undefined => {
   if (!value) return undefined;
   const parsed = new Date(value);
@@ -237,7 +253,7 @@ documentsRouter.get('/search', async (req, res) => {
     return;
   }
 
-  const q = (parsed.data.q ?? '').trim();
+  const q = unwrapQuotedPhrase((parsed.data.q ?? '').trim());
   const categoryId = typeof parsed.data.categoryId === 'string' ? parsed.data.categoryId : undefined;
   const categoryName = typeof parsed.data.categoryName === 'string' ? parsed.data.categoryName.trim() : undefined;
   const source = parsed.data.source ? mapSource(parsed.data.source) : undefined;

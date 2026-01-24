@@ -290,11 +290,11 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
                                                 href={d.attachmentUrl}
                                                 target="_blank"
                                                 rel="noreferrer"
-                                                className="text-gold hover:text-gold-light transition inline-flex items-center gap-1 text-xs"
+                                                className="rounded-full bg-navy text-gold px-3 py-1.5 text-xs font-semibold hover:bg-navy/90 transition inline-flex items-center gap-1"
                                                 title="פתח קובץ מצורף"
                                               >
                                                 <ExternalLink className="w-4 h-4" />
-                                                קובץ
+                                                פתח קובץ
                                               </a>
                                             ) : (
                                               <span className="text-[11px] text-slate-light">אין קובץ</span>
@@ -308,6 +308,19 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
                                           <div className="mt-3 pt-3 border-t border-pearl">
                                             <p className="text-[11px] font-semibold text-slate-light mb-1">תקציר מלא</p>
                                             <p className="text-xs text-slate whitespace-pre-wrap">{d.summary || 'ללא תקציר'}</p>
+                                            {d.attachmentUrl && (
+                                              <div className="mt-3 flex justify-end">
+                                                <a
+                                                  href={d.attachmentUrl}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                  className="rounded-full bg-gold text-navy px-4 py-2 text-xs font-semibold hover:bg-gold-light transition inline-flex items-center gap-2"
+                                                >
+                                                  <ExternalLink className="w-4 h-4" />
+                                                  פתח קובץ מצורף
+                                                </a>
+                                              </div>
+                                            )}
                                           </div>
                                         )}
                                       </div>
