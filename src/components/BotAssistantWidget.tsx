@@ -35,6 +35,13 @@ const formatDate = (iso?: string): string => {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('he-IL');
 };
 
+const previewText = (text: string, max = 180): string => {
+  const t = (text ?? '').replace(/\s+/g, ' ').trim();
+  if (!t) return '';
+  if (t.length <= max) return t;
+  return `${t.slice(0, Math.max(20, max - 1))}…`;
+};
+
 type BotCategoryKey = 'all' | 'judgments' | 'damages' | 'opinions' | 'summaries';
 const CATEGORY_NAME: Record<Exclude<BotCategoryKey, 'all'>, string> = {
   judgments: 'פסקי דין',
@@ -63,6 +70,7 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
   const [error, setError] = useState<string | null>(null);
   const [categoryKey, setCategoryKey] = useState<BotCategoryKey>('all');
   const [history, setHistory] = useState<ChatTurn[]>([]);
+  const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
 
   const isOpen = controlledOpen ?? internalOpen;
   const setOpen = (next: boolean) => {
@@ -255,24 +263,53 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
                                       <div key={d.id} className="rounded-card border border-pearl bg-white p-3">
                                         <div className="flex items-start justify-between gap-3">
                                           <div>
-                                            <p className="text-sm font-semibold text-navy">{d.title}</p>
+                                            <button
+                                              type="button"
+                                              className="text-sm font-semibold text-navy hover:underline text-right"
+                                              onClick={() => setExpandedDocId((prev) => (prev === d.id ? null : d.id))}
+                                              title="לחץ להצגת תקציר וקישור לקובץ"
+                                            >
+                                              {d.title}
+                                            </button>
                                             <p className="text-xs text-slate mt-1">
                                               {d.categoryName} • {formatDate(d.createdAt)} • {d.source}
                                             </p>
                                           </div>
-                                          {d.attachmentUrl && (
-                                            <a
-                                              href={d.attachmentUrl}
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              className="text-gold hover:text-gold-light transition inline-flex items-center gap-1 text-xs"
+                                          <div className="flex flex-col items-end gap-2">
+                                            <button
+                                              type="button"
+                                              className="text-xs text-slate hover:text-navy transition inline-flex items-center gap-1"
+                                              onClick={() => onOpenDocumentsWithQuery(d.title, d.categoryName)}
+                                              title="פתח במסך מסמכים"
                                             >
-                                              <ExternalLink className="w-4 h-4" />
-                                              קובץ
-                                            </a>
-                                          )}
+                                              <Search className="w-4 h-4" />
+                                              מסמכים
+                                            </button>
+                                            {d.attachmentUrl ? (
+                                              <a
+                                                href={d.attachmentUrl}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="text-gold hover:text-gold-light transition inline-flex items-center gap-1 text-xs"
+                                                title="פתח קובץ מצורף"
+                                              >
+                                                <ExternalLink className="w-4 h-4" />
+                                                קובץ
+                                              </a>
+                                            ) : (
+                                              <span className="text-[11px] text-slate-light">אין קובץ</span>
+                                            )}
+                                          </div>
                                         </div>
-                                        {d.summary && <p className="text-xs text-slate mt-2 line-clamp-3">{d.summary}</p>}
+                                        <p className="text-xs text-slate mt-2">
+                                          {expandedDocId === d.id ? (d.summary || 'ללא תקציר') : previewText(d.summary || 'ללא תקציר')}
+                                        </p>
+                                        {expandedDocId === d.id && (
+                                          <div className="mt-3 pt-3 border-t border-pearl">
+                                            <p className="text-[11px] font-semibold text-slate-light mb-1">תקציר מלא</p>
+                                            <p className="text-xs text-slate whitespace-pre-wrap">{d.summary || 'ללא תקציר'}</p>
+                                          </div>
+                                        )}
                                       </div>
                                     ))}
                                   </div>
