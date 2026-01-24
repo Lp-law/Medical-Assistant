@@ -19,6 +19,20 @@ import DamagesCalculator from './components/DamagesCalculator';
 
 type Page = 'home' | 'documents' | 'calculator';
 
+const SectionCard: React.FC<{ title: string; subtitle?: string; children: ReactNode }> = ({ title, subtitle, children }) => (
+  <section className="rounded-card border border-pearl bg-white shadow-card-xl">
+    <div className="h-1.5 w-full rounded-t-card bg-navy" />
+    <div className="p-6">
+      <div className="flex items-center justify-between text-navy">
+        <h2 className="text-lg font-semibold">{title}</h2>
+        {subtitle && <span className="text-xs text-slate">{subtitle}</span>}
+      </div>
+      <div className="mt-2 w-12 border-b-2 border-gold rounded-full" />
+      <div className="mt-6 text-slate">{children}</div>
+    </div>
+  </section>
+);
+
 const App: React.FC = () => {
   const { user, logout } = useAuth();
   const isAdmin = user?.role === 'admin';
@@ -34,24 +48,6 @@ const App: React.FC = () => {
     logout();
     setPageStack(['home']);
   };
-
-  const SectionCard: React.FC<{ title: string; subtitle?: string; children: ReactNode }> = ({
-    title,
-    subtitle,
-    children,
-  }) => (
-    <section className="rounded-card border border-pearl bg-white shadow-card-xl">
-      <div className="h-1.5 w-full rounded-t-card bg-navy" />
-      <div className="p-6">
-        <div className="flex items-center justify-between text-navy">
-          <h2 className="text-lg font-semibold">{title}</h2>
-          {subtitle && <span className="text-xs text-slate">{subtitle}</span>}
-        </div>
-        <div className="mt-2 w-12 border-b-2 border-gold rounded-full" />
-        <div className="mt-6 text-slate">{children}</div>
-      </div>
-    </section>
-  );
 
   const currentPage = pageStack[pageStack.length - 1] ?? 'home';
   const canGoBack = useMemo(() => pageStack.length > 1, [pageStack.length]);
