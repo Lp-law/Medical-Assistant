@@ -421,14 +421,24 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
             <div className="px-5 py-4 space-y-4">
               <div>
                 <p className="text-xs font-semibold text-slate-light mb-2">תקציר מלא</p>
-                <p className="text-sm text-slate whitespace-pre-wrap">{selectedDoc.summary || 'ללא תקציר'}</p>
+                <p className="text-sm text-slate whitespace-pre-wrap">
+                  {selectedDoc.summary?.trim()
+                    ? selectedDoc.summary
+                    : selectedDoc.contentSnippet?.trim()
+                      ? selectedDoc.contentSnippet
+                      : 'ללא תקציר'}
+                </p>
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-pearl">
                 <button
                   type="button"
                   className="btn-outline text-[11px] px-4 py-2 inline-flex items-center gap-2"
-                  onClick={() => onOpenDocumentsWithQuery(selectedDoc.title, selectedDoc.categoryName)}
+                  onClick={() => {
+                    onOpenDocumentsWithQuery(selectedDoc.title, selectedDoc.categoryName);
+                    setSelectedDoc(null);
+                    setOpen(false);
+                  }}
                 >
                   <Search className="w-4 h-4" />
                   פתח במסך מסמכים

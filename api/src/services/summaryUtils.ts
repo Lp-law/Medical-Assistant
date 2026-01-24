@@ -13,21 +13,28 @@ const stripQuotedReplies = (text: string): string => {
 
 const normalizeWhitespace = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
+const normalizeMultiline = (text: string): string => {
+  const raw = (text ?? '').toString().replace(/\r/g, '');
+  // Trim each line but keep line breaks; collapse excessive blank lines.
+  const lines = raw.split('\n').map((l) => l.replace(/[ \t]{2,}/g, ' ').trimEnd());
+  return lines.join('\n').replace(/\n{4,}/g, '\n\n\n').trim();
+};
+
 export const extractSummaryFromEmailBody = (bodyText: string): string => {
   const base = stripQuotedReplies(bodyText ?? '');
-  const normalized = base.replace(/\r/g, '').trim();
+  const normalized = normalizeMultiline(base);
   if (!normalized) return '';
 
   // Prefer explicit markers if present
   const markerMatch = normalized.match(/(?:תמצית|סיכום)\s*:\s*([\s\S]{20,800})/);
   if (markerMatch?.[1]) {
     const candidate = markerMatch[1].split(/\n{2,}/)[0] ?? markerMatch[1];
-    return normalizeWhitespace(candidate).slice(0, 1200);
+    // Keep it readable but don't overly truncate; the UI can show it in a modal.
+    return normalizeWhitespace(candidate).slice(0, 8000);
   }
 
-  // Otherwise take first paragraph-ish chunk
-  const firstBlock = normalized.split(/\n{2,}/)[0] ?? normalized;
-  return normalizeWhitespace(firstBlock).slice(0, 1200);
+  // Otherwise return the full (de-quoted) email body, capped for safety.
+  return normalized.slice(0, 20000);
 };
 
 const splitSentences = (text: string): string[] => {

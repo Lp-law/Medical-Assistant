@@ -57,6 +57,7 @@ type AssistantDocumentHit = {
   id: string;
   title: string;
   summary: string;
+  contentSnippet: string;
   categoryName: string;
   source: string;
   attachmentUrl: string | null;
@@ -77,6 +78,7 @@ const searchDocumentsByQuery = async (
         "d"."id",
         "d"."title",
         "d"."summary",
+        SUBSTRING(COALESCE("d"."content", '') FROM 1 FOR 20000) AS "content_snippet",
         "d"."source",
         "d"."attachmentUrl",
         "d"."createdAt",
@@ -100,6 +102,7 @@ const searchDocumentsByQuery = async (
     id: String(row.id),
     title: String(row.title ?? ''),
     summary: String(row.summary ?? ''),
+    contentSnippet: String(row.content_snippet ?? ''),
     categoryName: String(row.category_name ?? ''),
     source: String(row.source ?? ''),
     attachmentUrl: row.attachmentUrl ? String(row.attachmentUrl) : null,

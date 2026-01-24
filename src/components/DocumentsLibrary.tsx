@@ -784,7 +784,12 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
       {activeTab === 'search' ? searchView : uploadView}
 
       {selectedDoc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setSelectedDoc(null)}
+        >
           <div className="card-shell max-w-2xl w-full" onClick={(e) => e.stopPropagation()}>
             <div className="card-accent" />
             <div className="card-head">
@@ -803,7 +808,7 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
             <div className="card-body space-y-3 text-sm text-slate">
               <div>
                 <p className="text-xs font-semibold text-slate-light mb-2">תקציר מלא</p>
-                <p className="whitespace-pre-wrap text-navy">{selectedDoc.summary || 'ללא תמצית'}</p>
+                <p className="whitespace-pre-wrap text-navy">{selectedDoc.summary || selectedDoc.content || 'ללא תמצית'}</p>
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-pearl">
@@ -828,7 +833,6 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
               </div>
             </div>
           </div>
-          <button className="fixed inset-0 cursor-default" aria-label="סגור" onClick={() => setSelectedDoc(null)} />
         </div>
       )}
 

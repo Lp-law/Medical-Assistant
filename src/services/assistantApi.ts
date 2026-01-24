@@ -4,6 +4,7 @@ export type AssistantDocumentHit = {
   id: string;
   title: string;
   summary: string;
+  contentSnippet: string;
   categoryName: string;
   source: string;
   attachmentUrl: string | null;
