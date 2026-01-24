@@ -58,6 +58,25 @@ const resolveCategoryId = async (input: { categoryId?: string; categoryName?: st
 
 type EmlAttachmentCandidate = { filename: string; contentType?: string; content: Buffer };
 
+const htmlToTextLite = (html: string): string => {
+  const raw = (html ?? '').toString();
+  if (!raw.trim()) return '';
+  return raw
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+};
+
 const isSupportedAttachment = (filename: string, contentType?: string): boolean => {
   const lower = (filename ?? '').toLowerCase();
   if (lower.endsWith('.pdf') || lower.endsWith('.docx') || lower.endsWith('.doc')) return true;
@@ -153,7 +172,9 @@ documentsRouter.post('/upload-eml', upload.single('file'), async (req, res) => {
     return;
   }
 
-  const bodyText = (parsed?.text ?? '').toString();
+  const bodyText =
+    (parsed?.text ?? '').toString().trim() ||
+    htmlToTextLite((parsed?.html ?? '').toString());
   const bodySummary = extractSummaryFromEmailBody(bodyText) ?? '';
   const attachments = collectEmlAttachments(parsed);
   if (!attachments.length) {
