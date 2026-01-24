@@ -351,6 +351,123 @@ documentsRouter.post('/upload-eml', upload.single('file'), async (req, res) => {
   res.status(201).json({ documents: createdDocs, attachmentsProcessed: createdDocs.length });
 });
 
+// Batch manual email import (.eml) – upload many files at once (folder import)
+documentsRouter.post('/upload-eml-batch', upload.array('files', 500), async (req, res) => {
+  const files = Array.isArray((req as any).files) ? ((req as any).files as Express.Multer.File[]) : [];
+  if (!files.length) {
+    res.status(400).json({ error: 'files_required' });
+    return;
+  }
+
+  const categoryId = await resolveCategoryId({ categoryName: DEFAULT_CATEGORY_NAME });
+
+  const results: Array<{
+    fileName: string;
+    status: 'ok' | 'error';
+    attachmentsProcessed?: number;
+    documentsCreated?: number;
+    error?: string;
+  }> = [];
+
+  let totalDocs = 0;
+  let totalAttachments = 0;
+
+  for (const file of files) {
+    const originalName = file?.originalname ?? 'file.eml';
+    try {
+      const name = originalName.toLowerCase();
+      const isEml = name.endsWith('.eml') || file.mimetype === 'message/rfc822';
+      if (!isEml) {
+        results.push({ fileName: originalName, status: 'error', error: 'eml_required' });
+        continue;
+      }
+
+      let parsed: any;
+      try {
+        parsed = await simpleParser(file.buffer);
+      } catch (error) {
+        console.warn('[documents/upload-eml-batch] failed to parse eml', { fileName: originalName, error });
+        results.push({ fileName: originalName, status: 'error', error: 'eml_parse_failed' });
+        continue;
+      }
+
+      const bodyText =
+        (parsed?.text ?? '').toString().trim() ||
+        htmlToTextLite((parsed?.html ?? '').toString());
+      const bodySummary = extractSummaryFromEmailBody(bodyText) ?? '';
+      const attachments = collectEmlAttachments(parsed);
+      if (!attachments.length) {
+        results.push({ fileName: originalName, status: 'error', error: 'attachment_required' });
+        continue;
+      }
+
+      const createdDocs: any[] = [];
+      let idx = 0;
+      for (const attachment of attachments) {
+        idx += 1;
+        const attachmentUrl = await uploadFileToStorage(
+          attachment.content,
+          attachment.filename,
+          attachment.contentType ?? 'application/octet-stream',
+        );
+
+        let attachmentText = '';
+        try {
+          attachmentText = await extractTextFromAttachment(attachment.content, attachment.filename, attachment.contentType);
+        } catch (error) {
+          console.warn('[documents/upload-eml-batch] attachment text extraction failed', { fileName: originalName, error });
+          attachmentText = '';
+        }
+
+        const autoSummary = bodySummary.trim() ? bodySummary.trim() : summarizeFromText(attachmentText);
+        const mergedContent = [bodyText?.trim(), attachmentText?.trim()].filter(Boolean).join('\n\n').slice(0, 100_000);
+        const classifierInput = `${autoSummary}\n${mergedContent}`.slice(0, 20000);
+        const { topics, keywords } = classifyText(classifierInput);
+
+        const created = await prisma.document.create({
+          data: {
+            id: uuid(),
+            title: attachment.filename || 'email-attachment',
+            summary: autoSummary ?? '',
+            content: mergedContent ? mergedContent : null,
+            categoryId,
+            keywords,
+            topics,
+            source: mapSource('email'),
+            emailMessageId: `eml:${uuid()}:${idx}`,
+            attachmentUrl,
+            attachmentMime: attachment.contentType ?? null,
+          },
+          include: { category: true },
+        });
+        createdDocs.push({
+          ...created,
+          attachmentUrl: created.attachmentUrl ? buildAttachmentDownloadUrl(req, created.id) : null,
+        });
+      }
+
+      totalAttachments += attachments.length;
+      totalDocs += createdDocs.length;
+      results.push({
+        fileName: originalName,
+        status: 'ok',
+        attachmentsProcessed: attachments.length,
+        documentsCreated: createdDocs.length,
+      });
+    } catch (e: any) {
+      console.warn('[documents/upload-eml-batch] failed', { fileName: originalName, error: e });
+      results.push({ fileName: originalName, status: 'error', error: e?.message ?? 'server_error' });
+    }
+  }
+
+  res.status(201).json({
+    filesProcessed: files.length,
+    attachmentsProcessed: totalAttachments,
+    documentsCreated: totalDocs,
+    results,
+  });
+});
+
 // Free-text search + filters
 documentsRouter.get('/search', async (req, res) => {
   const parsed = searchSchema.safeParse(req.query ?? {});

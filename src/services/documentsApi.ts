@@ -73,6 +73,34 @@ export const uploadEml = async (file: File): Promise<UploadEmlResponse> => {
   return (await response.json()) as UploadEmlResponse;
 };
 
+export type UploadEmlBatchResultRow = {
+  fileName: string;
+  status: 'ok' | 'error';
+  attachmentsProcessed?: number;
+  documentsCreated?: number;
+  error?: string;
+};
+
+export type UploadEmlBatchResponse = {
+  filesProcessed: number;
+  attachmentsProcessed: number;
+  documentsCreated: number;
+  results: UploadEmlBatchResultRow[];
+};
+
+export const uploadEmlBatch = async (files: File[]): Promise<UploadEmlBatchResponse> => {
+  const formData = new FormData();
+  for (const f of files) {
+    formData.append('files', f);
+  }
+  const response = await authFetch('/documents/upload-eml-batch', { method: 'POST', body: formData });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(text || 'upload_eml_batch_failed');
+  }
+  return (await response.json()) as UploadEmlBatchResponse;
+};
+
 export const listCategories = async (): Promise<CategoryRecord[]> => {
   const payload = await apiRequest<{ categories: CategoryRecord[] }>('/categories', { method: 'GET' });
   return payload.categories ?? [];

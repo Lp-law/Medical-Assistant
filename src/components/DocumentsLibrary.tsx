@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, UploadCloud, FileText, AlertTriangle } from 'lucide-react';
 import { CategoryRecord, DocumentRecord } from '../types';
-import { createCategory, listCategories, searchDocuments, updateDocumentTags, uploadDocument, uploadEml } from '../services/documentsApi';
+import { createCategory, listCategories, searchDocuments, updateDocumentTags, uploadDocument, uploadEml, uploadEmlBatch } from '../services/documentsApi';
 import LegalDisclaimer from './LegalDisclaimer';
 import { useAuth } from '../context/AuthContext';
 import { openAttachment } from '../utils/openAttachment';
@@ -262,29 +262,30 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
     setEmlLoading(true);
     setEmlError(null);
     setEmlSuccess(null);
-    setEmlBatch(emls.map((f) => ({ name: f.name, status: 'pending' as const })));
+    setEmlBatch(emls.map((f) => ({ name: f.name, status: 'uploading' as const })));
 
-    let ok = 0;
-    for (let i = 0; i < emls.length; i += 1) {
-      const f = emls[i];
-      setEmlBatch((prev) => prev.map((row) => (row.name === f.name ? { ...row, status: 'uploading' } : row)));
-      try {
-        await uploadEml(f);
-        ok += 1;
-        setEmlBatch((prev) => prev.map((row) => (row.name === f.name ? { ...row, status: 'done' } : row)));
-      } catch (err: any) {
-        setEmlBatch((prev) =>
-          prev.map((row) =>
-            row.name === f.name ? { ...row, status: 'error', error: err?.message ?? 'upload_eml_failed' } : row,
-          ),
-        );
+    try {
+      const result = await uploadEmlBatch(emls);
+      const byName = new Map((result.results ?? []).map((r) => [r.fileName, r]));
+      setEmlBatch((prev) =>
+        prev.map((row) => {
+          const r = byName.get(row.name);
+          if (!r) return row;
+          if (r.status === 'ok') return { ...row, status: 'done' as const };
+          return { ...row, status: 'error' as const, error: r.error ?? 'upload_eml_failed' };
+        }),
+      );
+      const ok = (result.results ?? []).filter((r) => r.status === 'ok').length;
+      setEmlSuccess(
+        `הושלם: ${ok}/${emls.length} קבצי .eml עובדו. נוצרו ${result.documentsCreated} מסמכים מתוך ${result.attachmentsProcessed} מצורפים.`,
+      );
+      if (activeTab === 'search') {
+        await runSearch();
       }
-    }
-
-    setEmlSuccess(`הושלם: ${ok}/${emls.length} קבצי .eml עובדו.`);
-    setEmlLoading(false);
-    if (activeTab === 'search') {
-      await runSearch();
+    } catch (err: any) {
+      setEmlError(err?.message ?? 'upload_eml_batch_failed');
+    } finally {
+      setEmlLoading(false);
     }
   };
 
