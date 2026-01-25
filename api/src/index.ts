@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { authRouter } from './routes/auth';
 import { ingestRouter } from './routes/ingest';
 import { casesRouter } from './routes/cases';
@@ -21,6 +22,22 @@ const app = express();
 
 // Needed for secure cookies behind Render's reverse proxy
 app.set('trust proxy', 1);
+
+// Security headers with Helmet
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"],
+        imgSrc: ["'self'", 'data:', 'https:'],
+        connectSrc: ["'self'", ...config.corsOrigins],
+      },
+    },
+    crossOriginEmbedderPolicy: false, // Allow embedding for PDF.js
+  })
+);
 
 app.use(
   cors({

@@ -16,20 +16,50 @@ import { extractTextFromAttachment } from '../services/textExtraction';
 import { extractSummaryFromEmailBody, summarizeFromText } from '../services/summaryUtils';
 import { Prisma } from '@prisma/client';
 import { config } from '../services/env';
+import { getEmailBodyText } from '../services/emailBody';
+import { normalizeAttachmentFilename } from '../services/attachmentUtils';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
+// Sanitize string inputs - remove control characters and trim
+const sanitizeString = (str: string): string => {
+  return str
+    .trim()
+    .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
+    .replace(/\s+/g, ' '); // Normalize whitespace
+};
+
 const manualUploadSchema = z.object({
-  title: z.string().min(2).max(240),
+  title: z
+    .string()
+    .min(2)
+    .max(240)
+    .transform(sanitizeString)
+    .pipe(z.string().min(2).max(240)),
   categoryId: z.string().min(1).optional(),
-  categoryName: z.string().min(1).optional(),
-  summary: z.string().max(4000).optional().default(''),
+  categoryName: z
+    .string()
+    .min(1)
+    .optional()
+    .transform((val) => (val ? sanitizeString(val) : val)),
+  summary: z
+    .string()
+    .max(4000)
+    .optional()
+    .default('')
+    .transform((val) => (val ? sanitizeString(val) : val)),
 });
 
 const searchSchema = z.object({
-  q: z.string().optional(),
-  categoryId: z.string().optional(),
-  categoryName: z.string().optional(),
+  q: z
+    .string()
+    .optional()
+    .transform((val) => (val ? sanitizeString(val) : val)),
+  categoryId: z.string().min(1).optional(),
+  categoryName: z
+    .string()
+    .optional()
+    .transform((val) => (val ? sanitizeString(val) : val)),
   source: z.enum(['email', 'manual']).optional(),
   from: z.string().optional(),
   to: z.string().optional(),
@@ -102,32 +132,13 @@ const resolveCategoryId = async (input: { categoryId?: string; categoryName?: st
 
 type EmlAttachmentCandidate = { filename: string; contentType?: string; content: Buffer };
 
-const htmlToTextLite = (html: string): string => {
-  const raw = (html ?? '').toString();
-  if (!raw.trim()) return '';
-  return raw
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/&amp;/gi, '&')
-    .replace(/\s+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/[ \t]{2,}/g, ' ')
-    .trim();
-};
-
 const isSupportedAttachment = (filename: string, contentType?: string): boolean => {
   const lower = (filename ?? '').toLowerCase();
-  if (lower.endsWith('.pdf') || lower.endsWith('.docx') || lower.endsWith('.doc')) return true;
+  // NOTE: legacy `.doc` is intentionally not supported (no converter in-app).
+  if (lower.endsWith('.pdf') || lower.endsWith('.docx')) return true;
   if (!contentType) return false;
   return (
     contentType === 'application/pdf' ||
-    contentType === 'application/msword' ||
     contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   );
 };
@@ -136,7 +147,7 @@ const collectEmlAttachments = (parsed: any): EmlAttachmentCandidate[] => {
   const attachments = Array.isArray(parsed?.attachments) ? parsed.attachments : [];
   return attachments
     .map((att: any) => ({
-      filename: att?.filename || 'attachment',
+      filename: normalizeAttachmentFilename(att?.filename, att?.contentType),
       contentType: att?.contentType,
       content: Buffer.isBuffer(att?.content) ? att.content : Buffer.from(att?.content ?? ''),
     }))
@@ -157,8 +168,26 @@ documentsRouter.post('/upload', upload.single('file'), async (req, res) => {
     return;
   }
 
+  // Check if file type is supported
+  const filename = req.file.originalname;
+  if (!isSupportedAttachment(filename, req.file.mimetype)) {
+    const ext = filename.toLowerCase().split('.').pop() || 'unknown';
+    const errorMessage =
+      ext === 'doc'
+        ? 'DOC לא נתמך. נא להמיר ל-DOCX או PDF לפני העלאה.'
+        : `סוג קובץ לא נתמך: ${ext}. סוגים נתמכים: PDF, DOCX`;
+    res.status(400).json({ error: 'unsupported_file_type', message: errorMessage });
+    return;
+  }
+
   const { title, summary } = parsed.data;
   const attachmentUrl = await uploadFileToStorage(req.file.buffer, req.file.originalname, req.file.mimetype);
+
+  // Ensure attachmentUrl is always set if we have a valid file
+  if (!attachmentUrl) {
+    res.status(500).json({ error: 'upload_failed', message: 'שגיאה בשמירת הקובץ לאחסון' });
+    return;
+  }
 
   let content = '';
   try {
@@ -294,35 +323,62 @@ documentsRouter.post('/upload-eml', upload.single('file'), async (req, res) => {
     return;
   }
 
-  const bodyText =
-    (parsed?.text ?? '').toString().trim() ||
-    htmlToTextLite((parsed?.html ?? '').toString());
+  const bodyText = getEmailBodyText(parsed);
   const bodySummary = extractSummaryFromEmailBody(bodyText) ?? '';
+  const allAttachments = Array.isArray(parsed?.attachments) ? parsed.attachments : [];
   const attachments = collectEmlAttachments(parsed);
   if (!attachments.length) {
-    res.status(400).json({ error: 'attachment_required' });
+    const total = allAttachments.length;
+    const unsupported = allAttachments.filter((att: any) => {
+      const filename = normalizeAttachmentFilename(att?.filename, att?.contentType);
+      return !isSupportedAttachment(filename, att?.contentType);
+    });
+    if (total > 0 && unsupported.length > 0) {
+      const unsupportedTypes = unsupported.map((att: any) => {
+        const filename = normalizeAttachmentFilename(att?.filename, att?.contentType);
+        const ext = filename.toLowerCase().split('.').pop() || 'unknown';
+        return ext === 'doc' ? 'DOC (לא נתמך - נדרש DOCX)' : ext;
+      });
+      res.status(400).json({
+        error: 'unsupported_attachment_type',
+        message: `הקובץ המצורף לא נתמך. סוגים נתמכים: PDF, DOCX. קבצים שנמצאו: ${unsupportedTypes.join(', ')}`,
+        unsupportedTypes,
+      });
+      return;
+    }
+    res.status(400).json({ error: 'attachment_required', message: 'לא נמצאו קבצים מצורפים נתמכים במייל' });
     return;
   }
 
   const categoryId = await resolveCategoryId({ categoryName: DEFAULT_CATEGORY_NAME });
   const createdDocs: any[] = [];
 
-  let idx = 0;
-  for (const attachment of attachments) {
-    idx += 1;
-    const attachmentUrl = await uploadFileToStorage(
-      attachment.content,
-      attachment.filename,
-      attachment.contentType ?? 'application/octet-stream',
-    );
+    let idx = 0;
+    for (const attachment of attachments) {
+      idx += 1;
+      const attachmentUrl = await uploadFileToStorage(
+        attachment.content,
+        attachment.filename,
+        attachment.contentType ?? 'application/octet-stream',
+      );
 
-    let attachmentText = '';
-    try {
-      attachmentText = await extractTextFromAttachment(attachment.content, attachment.filename, attachment.contentType);
-    } catch (error) {
-      console.warn('[documents/upload-eml] attachment text extraction failed', error);
-      attachmentText = '';
-    }
+      // Ensure attachmentUrl is always set if we have a valid attachment
+      if (!attachmentUrl) {
+        console.warn('[documents/upload-eml] failed to upload attachment to storage', {
+          filename: attachment.filename,
+          contentType: attachment.contentType,
+          size: attachment.content?.length,
+        });
+        continue;
+      }
+
+      let attachmentText = '';
+      try {
+        attachmentText = await extractTextFromAttachment(attachment.content, attachment.filename, attachment.contentType);
+      } catch (error) {
+        console.warn('[documents/upload-eml] attachment text extraction failed', error);
+        attachmentText = '';
+      }
 
     const autoSummary = bodySummary.trim() ? bodySummary.trim() : summarizeFromText(attachmentText);
     const mergedContent = [bodyText?.trim(), attachmentText?.trim()].filter(Boolean).join('\n\n').slice(0, 100_000);
@@ -391,13 +447,34 @@ documentsRouter.post('/upload-eml-batch', upload.array('files', 500), async (req
         continue;
       }
 
-      const bodyText =
-        (parsed?.text ?? '').toString().trim() ||
-        htmlToTextLite((parsed?.html ?? '').toString());
+      const bodyText = getEmailBodyText(parsed);
       const bodySummary = extractSummaryFromEmailBody(bodyText) ?? '';
+      const allAttachments = Array.isArray(parsed?.attachments) ? parsed.attachments : [];
       const attachments = collectEmlAttachments(parsed);
       if (!attachments.length) {
-        results.push({ fileName: originalName, status: 'error', error: 'attachment_required' });
+        const total = allAttachments.length;
+        const unsupported = allAttachments.filter((att: any) => {
+          const filename = normalizeAttachmentFilename(att?.filename, att?.contentType);
+          return !isSupportedAttachment(filename, att?.contentType);
+        });
+        if (total > 0 && unsupported.length > 0) {
+          const unsupportedTypes = unsupported.map((att: any) => {
+            const filename = normalizeAttachmentFilename(att?.filename, att?.contentType);
+            const ext = filename.toLowerCase().split('.').pop() || 'unknown';
+            return ext === 'doc' ? 'DOC (לא נתמך - נדרש DOCX)' : ext;
+          });
+          results.push({
+            fileName: originalName,
+            status: 'error',
+            error: `unsupported_attachment_type: ${unsupportedTypes.join(', ')}`,
+          });
+          continue;
+        }
+        results.push({
+          fileName: originalName,
+          status: 'error',
+          error: 'attachment_required',
+        });
         continue;
       }
 
@@ -410,6 +487,17 @@ documentsRouter.post('/upload-eml-batch', upload.array('files', 500), async (req
           attachment.filename,
           attachment.contentType ?? 'application/octet-stream',
         );
+
+        // Ensure attachmentUrl is always set if we have a valid attachment
+        if (!attachmentUrl) {
+          console.warn('[documents/upload-eml-batch] failed to upload attachment to storage', {
+            fileName: originalName,
+            filename: attachment.filename,
+            contentType: attachment.contentType,
+            size: attachment.content?.length,
+          });
+          continue;
+        }
 
         let attachmentText = '';
         try {
@@ -486,7 +574,9 @@ documentsRouter.get('/search', async (req, res) => {
   const offset = Math.max(Number(parsed.data.offset ?? 0) || 0, 0);
 
   // Use Postgres ILIKE across title/summary/content + TEXT[] (topics/keywords) via array_to_string
-  const ilike = q ? `%${q}%` : null;
+  // Only search by text if q is provided and not empty
+  const hasTextSearch = q && q.length > 0;
+  const ilike = hasTextSearch ? `%${q}%` : null;
   const categoryIdVal = categoryId ?? null;
   const categoryNameVal = categoryName ? `%${categoryName}%` : null;
   const sourceVal = source ?? null;

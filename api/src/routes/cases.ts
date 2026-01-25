@@ -16,19 +16,46 @@ import { exportCase } from '../services/caseExporter';
 
 const router = Router();
 
+// Sanitize string inputs - remove control characters and trim
+const sanitizeString = (str: string): string => {
+  return str
+    .trim()
+    .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
+    .replace(/\s+/g, ' '); // Normalize whitespace
+};
+
 const createCaseSchema = z.object({
-  title: z.string().min(1).max(200).optional(),
+  title: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .transform((val) => (val ? sanitizeString(val) : val)),
   data: z.record(z.any()).optional(),
 });
 
 const updateCaseSchema = z.object({
-  title: z.string().min(1).max(200).optional(),
+  title: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .transform((val) => (val ? sanitizeString(val) : val)),
   data: z.record(z.any()).optional(),
 });
 
 const metadataSchema = z.object({
-  title: z.string().min(1).max(200).optional(),
-  topicSummary: z.string().max(160).optional(),
+  title: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .transform((val) => (val ? sanitizeString(val) : val)),
+  topicSummary: z
+    .string()
+    .max(160)
+    .optional()
+    .transform((val) => (val ? sanitizeString(val) : val)),
 });
 
 const exportSchema = z.object({

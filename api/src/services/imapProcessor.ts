@@ -7,6 +7,8 @@ import { uploadFileToStorage } from './storageClient';
 import { classifyText } from './documentClassifier';
 import { extractTextFromAttachment } from './textExtraction';
 import { extractSummaryFromEmailBody, summarizeFromText } from './summaryUtils';
+import { getEmailBodyText } from './emailBody';
+import { normalizeAttachmentFilename } from './attachmentUtils';
 
 type AttachmentCandidate = {
   filename: string;
@@ -16,11 +18,11 @@ type AttachmentCandidate = {
 
 const isSupportedAttachment = (filename: string, contentType?: string): boolean => {
   const lower = filename.toLowerCase();
-  if (lower.endsWith('.pdf') || lower.endsWith('.docx') || lower.endsWith('.doc')) return true;
+  // NOTE: legacy `.doc` is intentionally not supported (no converter in-app).
+  if (lower.endsWith('.pdf') || lower.endsWith('.docx')) return true;
   if (!contentType) return false;
   return (
     contentType === 'application/pdf' ||
-    contentType === 'application/msword' ||
     contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   );
 };
@@ -36,7 +38,7 @@ const collectAttachments = (parsed: any): AttachmentCandidate[] => {
   const attachments = Array.isArray(parsed?.attachments) ? parsed.attachments : [];
   return attachments
     .map((att: any) => ({
-      filename: att?.filename || 'attachment',
+      filename: normalizeAttachmentFilename(att?.filename, att?.contentType),
       contentType: att?.contentType,
       content: Buffer.isBuffer(att?.content) ? att.content : Buffer.from(att?.content ?? ''),
     }))
@@ -172,7 +174,7 @@ export const runImapIngestionCycle = async (): Promise<ImapCycleResult> => {
       const emailDate = parsed.date instanceof Date ? parsed.date : msg.internalDate ?? null;
       const emailMessageId = typeof parsed.messageId === 'string' ? parsed.messageId : `uid-${uid.toString()}`;
 
-      const bodyText = (parsed.text ?? '').toString();
+      const bodyText = getEmailBodyText(parsed);
       const bodySummary = extractSummaryFromEmailBody(bodyText);
 
       const attachments = collectAttachments(parsed).filter((att) =>
@@ -204,10 +206,28 @@ export const runImapIngestionCycle = async (): Promise<ImapCycleResult> => {
           attachment.contentType ?? 'application/octet-stream',
         );
 
+        // Ensure attachmentUrl is always set if we have a valid attachment
+        if (!attachmentUrl) {
+          console.warn('[imap] failed to upload attachment to storage', {
+            mailbox,
+            filename: attachment.filename,
+            contentType: attachment.contentType,
+            size: attachment.content?.length,
+          });
+          skipped += 1;
+          continue;
+        }
+
         let content = '';
         try {
           content = await extractTextFromAttachment(attachment.content, attachment.filename, attachment.contentType);
-        } catch {
+        } catch (error) {
+          console.warn('[imap] attachment text extraction failed', {
+            mailbox,
+            filename: attachment.filename,
+            contentType: attachment.contentType,
+            error,
+          });
           content = '';
         }
 

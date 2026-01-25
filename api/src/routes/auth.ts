@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { logAuditEvent } from '../services/auditLogger';
 import { signAccessToken, validateUserCredentials } from '../services/authService';
@@ -9,12 +10,34 @@ import { config } from '../services/env';
 const router = Router();
 const COOKIE_NAME = 'lm_access_token';
 
-const loginSchema = z.object({
-  username: z.string().min(1),
-  password: z.string().min(1),
+// Rate limiting for login - prevent brute force attacks
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 attempts per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too_many_login_attempts', message: 'יותר מדי ניסיונות התחברות. נא לנסות שוב בעוד 15 דקות.' },
+  skipSuccessfulRequests: true, // Don't count successful logins
 });
 
-router.post('/login', async (req, res) => {
+// Sanitize string inputs - remove control characters and trim
+const sanitizeString = (str: string): string => {
+  return str
+    .trim()
+    .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
+    .replace(/\s+/g, ' '); // Normalize whitespace
+};
+
+const loginSchema = z.object({
+  username: z
+    .string()
+    .min(1)
+    .transform(sanitizeString)
+    .pipe(z.string().min(1)),
+  password: z.string().min(1), // Don't sanitize password - keep as-is
+});
+
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const parseResult = loginSchema.safeParse(req.body);
     if (!parseResult.success) {

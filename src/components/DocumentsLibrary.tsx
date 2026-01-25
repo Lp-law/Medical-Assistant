@@ -399,6 +399,13 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
               {searchLoading ? 'מחפש...' : 'חפש'}
             </button>
           </div>
+          {!canSearch && !searchLoading && (
+            <div className="state-block text-sm">
+              <AlertTriangle className="state-block__icon" aria-hidden="true" />
+              <p className="state-block__title">נא להזין מילת חיפוש או לבחור מסנן</p>
+              <p className="state-block__description">הזן טקסט לחיפוש, בחר קטגוריה, או הגדר טווח תאריכים</p>
+            </div>
+          )}
           {searchError && (
             <div className="state-block state-block--error text-sm">
               <AlertTriangle className="state-block__icon" aria-hidden="true" />
@@ -809,7 +816,9 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
             <div className="card-body space-y-3 text-sm text-slate">
               <div>
                 <p className="text-xs font-semibold text-slate-light mb-2">תקציר מלא</p>
-                <p className="whitespace-pre-wrap text-navy">{selectedDoc.summary || selectedDoc.content || 'ללא תמצית'}</p>
+                <div className="max-h-96 overflow-y-auto rounded-card border border-pearl bg-white p-3">
+                  <p className="whitespace-pre-wrap text-navy">{selectedDoc.summary || selectedDoc.content || 'ללא תמצית'}</p>
+                </div>
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-pearl">
