@@ -66,7 +66,7 @@ The current migration only adds the `timeline` JSONB column to the existing `Kno
 
 ### 4.2 Deployment on Render
 1. צור שירות Web חדש ב-Render ושייך אותו לתיקיית `api`.
-2. Build Command: `npm install && npm run build`
+2. Build Command: `npm install && npx prisma generate && npx prisma migrate deploy && npm run build`
 3. Start Command: `npm run start`
 4. בלשונית **Environment → Environment Variables** העתק את כל הערכים מה-`.env`.
 5. הוסף Health Check (`/health`) כדי למנוע sleep ממושך.
