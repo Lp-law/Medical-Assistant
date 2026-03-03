@@ -13,6 +13,7 @@ const withAuth = (init?: RequestInit): RequestInit => {
   }
   return {
     ...init,
+    credentials: 'include',
     headers,
   };
 };
@@ -32,13 +33,13 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
 export { request as apiRequest };
 
 export const authFetch = (path: string, init?: RequestInit): Promise<Response> => {
-  return fetch(`${API_BASE_URL}${path}`, withAuth(init));
+  return fetch(`${API_BASE_URL}${path}`, withAuth({ ...init, credentials: 'include' }));
 };
 
 // Like authFetch(), but supports absolute URLs (e.g. when API returns a full https://... URL).
 export const authorizedFetch = (urlOrPath: string, init?: RequestInit): Promise<Response> => {
   const url = /^https?:\/\//i.test(urlOrPath) ? urlOrPath : `${API_BASE_URL}${urlOrPath}`;
-  return fetch(url, withAuth(init));
+  return fetch(url, withAuth({ ...init, credentials: 'include' }));
 };
 
 export const isApiConfigured = (): boolean => Boolean(API_BASE_URL);

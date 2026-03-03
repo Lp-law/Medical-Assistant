@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { PropsWithChildren } from 'react';
-import { login as loginRequest, AuthUser } from '../services/authClient';
+import { login as loginRequest, restoreSession, logoutRequest, AuthUser } from '../services/authClient';
 import { setAuthToken } from '../services/api';
 
 interface AuthContextValue {
@@ -9,6 +9,7 @@ interface AuthContextValue {
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
   loading: boolean;
+  initializing: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -17,6 +18,24 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [initializing, setInitializing] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    restoreSession()
+      .then((restoredUser) => {
+        if (!cancelled && restoredUser) {
+          setUser(restoredUser);
+          setAuthToken(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setInitializing(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const login = async (username: string, password: string): Promise<void> => {
     setLoading(true);
@@ -34,9 +53,14 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
     setUser(null);
     setToken(null);
     setAuthToken(null);
+    logoutRequest();
   };
 
-  return <AuthContext.Provider value={{ user, token, login, logout, loading }}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ user, token, login, logout, loading, initializing }}>
+      {children}
+    </AuthContext.Provider>
+  );
 };
 
 export const useAuth = (): AuthContextValue => {

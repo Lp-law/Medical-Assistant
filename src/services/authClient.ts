@@ -15,6 +15,7 @@ export interface LoginResponse {
 export const login = async (username: string, password: string): Promise<LoginResponse> => {
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
     },
@@ -31,6 +32,7 @@ export const login = async (username: string, password: string): Promise<LoginRe
 
 export const fetchCurrentUser = async (token: string): Promise<AuthUser> => {
   const response = await fetch(`${API_BASE_URL}/auth/me`, {
+    credentials: 'include',
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -40,5 +42,32 @@ export const fetchCurrentUser = async (token: string): Promise<AuthUser> => {
   }
   const data = await response.json();
   return data.user as AuthUser;
+};
+
+/** Restore session from httpOnly cookie (e.g. after page refresh). Returns user or null. */
+export const restoreSession = async (): Promise<AuthUser | null> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/me`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return (data.user as AuthUser) ?? null;
+  } catch {
+    return null;
+  }
+};
+
+/** Call server logout to clear the session cookie. */
+export const logoutRequest = async (): Promise<void> => {
+  try {
+    await fetch(`${API_BASE_URL}/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+  } catch {
+    // ignore
+  }
 };
 

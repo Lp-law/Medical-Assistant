@@ -30,7 +30,7 @@ const SectionCard: React.FC<{ title: string; subtitle?: string; children: ReactN
 );
 
 const App: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, initializing } = useAuth();
   const [pageStack, setPageStack] = useState<Page[]>(['home']);
   const [homeSearch, setHomeSearch] = useState('');
   const [homeCategoryName, setHomeCategoryName] = useState<string | undefined>(undefined);
@@ -47,6 +47,13 @@ const App: React.FC = () => {
   const pushPage = (page: Page) => setPageStack((prev) => [...prev, page]);
   const popPage = () => setPageStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
 
+  if (initializing) {
+    return (
+      <div className="min-h-screen bg-pearl flex items-center justify-center" dir="rtl">
+        <p className="text-navy">טוען...</p>
+      </div>
+    );
+  }
   if (!user) {
     return <LoginScreen />;
   }
