@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { UploadCloud, X } from 'lucide-react';
+import { DocumentTypeKey } from '../types';
 import { uploadDocument } from '../services/documentsApi';
 
 type Props = {
@@ -29,6 +30,7 @@ const QuickUploadModal: React.FC<Props> = ({ isOpen, categoryName, onClose, onUp
     try {
       const created = await uploadDocument({
         title: title.trim(),
+        docType: (categoryName as DocumentTypeKey) || 'פסק דין',
         categoryName,
         summary: summary.trim() || undefined,
         file,
@@ -91,7 +93,7 @@ const QuickUploadModal: React.FC<Props> = ({ isOpen, categoryName, onClose, onUp
             <input
               className="mt-1 w-full text-sm"
               type="file"
-              accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               onChange={(e) => {
                 const next = e.target.files?.[0] ?? null;
                 setFile(next);

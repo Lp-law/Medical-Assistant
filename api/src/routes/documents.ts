@@ -18,8 +18,9 @@ import { Prisma } from '@prisma/client';
 import { config } from '../services/env';
 import { getEmailBodyText } from '../services/emailBody';
 import { normalizeAttachmentFilename } from '../services/attachmentUtils';
+import { extractEmailsFromPst, convertEmailToEml } from '../services/pstExtractor';
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } }); // 500MB for PST files
 
 // Sanitize string inputs - remove control characters and trim
 const sanitizeString = (str: string): string => {
@@ -29,6 +30,8 @@ const sanitizeString = (str: string): string => {
     .replace(/\s+/g, ' '); // Normalize whitespace
 };
 
+const DOC_TYPES = ['פסק דין', 'חוות דעת', 'תחשיב נזק', 'סיכומים', 'מאמר', 'ספר'] as const;
+
 const manualUploadSchema = z.object({
   title: z
     .string()
@@ -36,12 +39,21 @@ const manualUploadSchema = z.object({
     .max(240)
     .transform(sanitizeString)
     .pipe(z.string().min(2).max(240)),
+  docType: z.enum(DOC_TYPES),
   categoryId: z.string().min(1).optional(),
   categoryName: z
     .string()
     .min(1)
     .optional()
     .transform((val) => (val ? sanitizeString(val) : val)),
+  field: z.string().max(200).optional().transform((val) => (val ? sanitizeString(val) : undefined)),
+  expertName: z.string().max(200).optional().transform((val) => (val ? sanitizeString(val) : undefined)),
+  articleAuthor: z.string().max(200).optional().transform((val) => (val ? sanitizeString(val) : undefined)),
+  articleTitle: z.string().max(400).optional().transform((val) => (val ? sanitizeString(val) : undefined)),
+  bookAuthor: z.string().max(200).optional().transform((val) => (val ? sanitizeString(val) : undefined)),
+  bookName: z.string().max(400).optional().transform((val) => (val ? sanitizeString(val) : undefined)),
+  bookChapter: z.string().max(200).optional().transform((val) => (val ? sanitizeString(val) : undefined)),
+  notes: z.string().max(2000).optional().transform((val) => (val ? sanitizeString(val) : undefined)),
   summary: z
     .string()
     .max(4000)
@@ -132,9 +144,9 @@ const resolveCategoryId = async (input: { categoryId?: string; categoryName?: st
 
 type EmlAttachmentCandidate = { filename: string; contentType?: string; content: Buffer };
 
+// Only Word (DOCX) and PDF allowed
 const isSupportedAttachment = (filename: string, contentType?: string): boolean => {
   const lower = (filename ?? '').toLowerCase();
-  // NOTE: legacy `.doc` is intentionally not supported (no converter in-app).
   if (lower.endsWith('.pdf') || lower.endsWith('.docx')) return true;
   if (!contentType) return false;
   return (
@@ -155,6 +167,21 @@ const collectEmlAttachments = (parsed: any): EmlAttachmentCandidate[] => {
     .filter((att: EmlAttachmentCandidate) => isSupportedAttachment(att.filename, att.contentType));
 };
 
+// Suggestions for field (תחום) and expert name – from existing documents
+documentsRouter.get('/field-suggestions', async (_req, res) => {
+  const rows = await prisma.$queryRaw<Array<{ field: string | null }>>(
+    Prisma.sql`SELECT DISTINCT "field" FROM "Document" WHERE "field" IS NOT NULL AND TRIM("field") <> '' ORDER BY "field" ASC`,
+  );
+  res.json({ suggestions: rows.map((r) => r.field).filter(Boolean) as string[] });
+});
+
+documentsRouter.get('/expert-suggestions', async (_req, res) => {
+  const rows = await prisma.$queryRaw<Array<{ expertName: string | null }>>(
+    Prisma.sql`SELECT DISTINCT "expertName" FROM "Document" WHERE "expertName" IS NOT NULL AND TRIM("expertName") <> '' ORDER BY "expertName" ASC`,
+  );
+  res.json({ suggestions: rows.map((r) => r.expertName).filter(Boolean) as string[] });
+});
+
 // Manual upload (PDF/DOCX)
 documentsRouter.post('/upload', upload.single('file'), async (req, res) => {
   if (!req.file) {
@@ -168,19 +195,15 @@ documentsRouter.post('/upload', upload.single('file'), async (req, res) => {
     return;
   }
 
-  // Check if file type is supported
+  // Check if file type is supported (only PDF and Word/DOCX)
   const filename = req.file.originalname;
   if (!isSupportedAttachment(filename, req.file.mimetype)) {
     const ext = filename.toLowerCase().split('.').pop() || 'unknown';
-    const errorMessage =
-      ext === 'doc'
-        ? 'DOC לא נתמך. נא להמיר ל-DOCX או PDF לפני העלאה.'
-        : `סוג קובץ לא נתמך: ${ext}. סוגים נתמכים: PDF, DOCX`;
-    res.status(400).json({ error: 'unsupported_file_type', message: errorMessage });
+    res.status(400).json({ error: 'unsupported_file_type', message: `סוג קובץ לא נתמך: ${ext}. ניתן להעלות רק קבצי PDF ו-Word (DOCX).` });
     return;
   }
 
-  const { title, summary } = parsed.data;
+  const { title, docType, field, expertName, articleAuthor, articleTitle, bookAuthor, bookName, bookChapter, notes, summary } = parsed.data;
   const attachmentUrl = await uploadFileToStorage(req.file.buffer, req.file.originalname, req.file.mimetype);
 
   // Ensure attachmentUrl is always set if we have a valid file
@@ -201,7 +224,7 @@ documentsRouter.post('/upload', upload.single('file'), async (req, res) => {
 
   const categoryId = await resolveCategoryId({
     categoryId: parsed.data.categoryId,
-    categoryName: parsed.data.categoryName,
+    categoryName: docType,
   });
 
   const created = await prisma.document.create({
@@ -214,6 +237,15 @@ documentsRouter.post('/upload', upload.single('file'), async (req, res) => {
       keywords,
       topics,
       source: mapSource('manual'),
+      docType,
+      field: field ?? null,
+      expertName: expertName ?? null,
+      articleAuthor: articleAuthor ?? null,
+      articleTitle: articleTitle ?? null,
+      bookAuthor: bookAuthor ?? null,
+      bookName: bookName ?? null,
+      bookChapter: bookChapter ?? null,
+      notes: notes ?? null,
       attachmentUrl,
       attachmentMime: req.file.mimetype,
     },
@@ -407,6 +439,129 @@ documentsRouter.post('/upload-eml', upload.single('file'), async (req, res) => {
   res.status(201).json({ documents: createdDocs, attachmentsProcessed: createdDocs.length });
 });
 
+// PST file import – extract all emails and process them
+documentsRouter.post('/upload-pst', upload.single('file'), async (req, res) => {
+  if (!req.file) {
+    res.status(400).json({ error: 'file_required' });
+    return;
+  }
+  const name = (req.file.originalname ?? '').toLowerCase();
+  const isPst = name.endsWith('.pst');
+  if (!isPst) {
+    res.status(400).json({ error: 'pst_required', message: 'קובץ PST נדרש' });
+    return;
+  }
+
+  try {
+    // Extract all emails from PST
+    const extractedEmails = await extractEmailsFromPst(req.file.buffer);
+    
+    if (extractedEmails.length === 0) {
+      res.status(400).json({ error: 'no_emails_found', message: 'לא נמצאו מיילים בקובץ PST' });
+      return;
+    }
+
+    const categoryId = await resolveCategoryId({ categoryName: DEFAULT_CATEGORY_NAME });
+    const createdDocs: any[] = [];
+    let totalAttachments = 0;
+    let processedEmails = 0;
+
+    // Process each email
+    for (const email of extractedEmails) {
+      // Convert email to EML format and parse it
+      const emlContent = convertEmailToEml(email);
+      const emlBuffer = Buffer.from(emlContent, 'utf-8');
+      
+      let parsed: any;
+      try {
+        parsed = await simpleParser(emlBuffer);
+      } catch (error) {
+        console.warn('[documents/upload-pst] failed to parse converted EML', { subject: email.subject, error });
+        continue;
+      }
+
+      const bodyText = getEmailBodyText(parsed);
+      const bodySummary = extractSummaryFromEmailBody(bodyText) ?? '';
+      const attachments = collectEmlAttachments(parsed);
+
+      if (!attachments.length) {
+        // Email without attachments - skip or create document from body only?
+        continue;
+      }
+
+      totalAttachments += attachments.length;
+      processedEmails += 1;
+
+      let idx = 0;
+      for (const attachment of attachments) {
+        idx += 1;
+        const attachmentUrl = await uploadFileToStorage(
+          attachment.content,
+          attachment.filename,
+          attachment.contentType ?? 'application/octet-stream',
+        );
+
+        if (!attachmentUrl) {
+          console.warn('[documents/upload-pst] failed to upload attachment to storage', {
+            filename: attachment.filename,
+            contentType: attachment.contentType,
+            size: attachment.content?.length,
+          });
+          continue;
+        }
+
+        let attachmentText = '';
+        try {
+          attachmentText = await extractTextFromAttachment(attachment.content, attachment.filename, attachment.contentType);
+        } catch (error) {
+          console.warn('[documents/upload-pst] attachment text extraction failed', error);
+          attachmentText = '';
+        }
+
+        const autoSummary = bodySummary.trim() ? bodySummary.trim() : summarizeFromText(attachmentText);
+        const mergedContent = [bodyText?.trim(), attachmentText?.trim()].filter(Boolean).join('\n\n').slice(0, 100_000);
+        const classifierInput = `${autoSummary}\n${mergedContent}`.slice(0, 20000);
+        const { topics, keywords } = classifyText(classifierInput);
+
+        const created = await prisma.document.create({
+          data: {
+            id: uuid(),
+            title: attachment.filename || email.subject || 'email-attachment',
+            summary: autoSummary ?? '',
+            content: mergedContent ? mergedContent : null,
+            categoryId,
+            keywords,
+            topics,
+            source: mapSource('email'),
+            emailMessageId: `pst:${email.messageId}:${idx}`,
+            emailFrom: email.from,
+            emailSubject: email.subject,
+            emailDate: email.date,
+            attachmentUrl,
+            attachmentMime: attachment.contentType ?? null,
+          },
+          include: { category: true },
+        });
+        createdDocs.push(created);
+      }
+    }
+
+    res.status(201).json({
+      documents: createdDocs,
+      emailsProcessed: processedEmails,
+      totalEmails: extractedEmails.length,
+      attachmentsProcessed: totalAttachments,
+      documentsCreated: createdDocs.length,
+    });
+  } catch (error) {
+    console.error('[documents/upload-pst] failed to process PST', error);
+    res.status(500).json({
+      error: 'pst_processing_failed',
+      message: error instanceof Error ? error.message : 'שגיאה בעיבוד קובץ PST',
+    });
+  }
+});
+
 // Batch manual email import (.eml) – upload many files at once (folder import)
 documentsRouter.post('/upload-eml-batch', upload.array('files', 500), async (req, res) => {
   const files = Array.isArray((req as any).files) ? ((req as any).files as Express.Multer.File[]) : [];
@@ -461,7 +616,7 @@ documentsRouter.post('/upload-eml-batch', upload.array('files', 500), async (req
           const unsupportedTypes = unsupported.map((att: any) => {
             const filename = normalizeAttachmentFilename(att?.filename, att?.contentType);
             const ext = filename.toLowerCase().split('.').pop() || 'unknown';
-            return ext === 'doc' ? 'DOC (לא נתמך - נדרש DOCX)' : ext;
+            return ext;
           });
           results.push({
             fileName: originalName,
@@ -590,7 +745,16 @@ documentsRouter.get('/search', async (req, res) => {
         "d"."summary" ILIKE ${ilike} OR
         COALESCE("d"."content", '') ILIKE ${ilike} OR
         array_to_string("d"."topics", ' ') ILIKE ${ilike} OR
-        array_to_string("d"."keywords", ' ') ILIKE ${ilike}
+        array_to_string("d"."keywords", ' ') ILIKE ${ilike} OR
+        COALESCE("d"."docType", '') ILIKE ${ilike} OR
+        COALESCE("d"."field", '') ILIKE ${ilike} OR
+        COALESCE("d"."expertName", '') ILIKE ${ilike} OR
+        COALESCE("d"."articleAuthor", '') ILIKE ${ilike} OR
+        COALESCE("d"."articleTitle", '') ILIKE ${ilike} OR
+        COALESCE("d"."bookAuthor", '') ILIKE ${ilike} OR
+        COALESCE("d"."bookName", '') ILIKE ${ilike} OR
+        COALESCE("d"."bookChapter", '') ILIKE ${ilike} OR
+        COALESCE("d"."notes", '') ILIKE ${ilike}
       ))
       AND (${categoryIdVal}::text IS NULL OR "d"."categoryId" = ${categoryIdVal}::text)
       AND (${categoryNameVal}::text IS NULL OR "c"."name" ILIKE ${categoryNameVal})

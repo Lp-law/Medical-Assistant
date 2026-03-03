@@ -74,11 +74,9 @@ const DEFAULT_ROWS: HeadRow[] = [
   { id: uid(), enabled: true, name: 'כאב וסבל', kind: 'add', plaintiff: 0, defendant: 0 },
   { id: uid(), enabled: true, name: 'עזרת צד ג׳', kind: 'add', plaintiff: 0, defendant: 0 },
   { id: uid(), enabled: true, name: 'הוצאות רפואיות', kind: 'add', plaintiff: 0, defendant: 0 },
-  { id: uid(), enabled: true, name: 'אורתופד', kind: 'add', plaintiff: 0, defendant: 0 },
   { id: uid(), enabled: true, name: 'הפסדי שכר', kind: 'add', plaintiff: 0, defendant: 0 },
   { id: uid(), enabled: true, name: 'ניידות', kind: 'add', plaintiff: 0, defendant: 0 },
   { id: uid(), enabled: true, name: 'התאמות דיור', kind: 'add', plaintiff: 0, defendant: 0 },
-  { id: uid(), enabled: true, name: 'הוצאות עודפות בגין נסיעות לחו״ל', kind: 'add', plaintiff: 0, defendant: 0 },
   { id: uid(), enabled: true, name: 'מל״ל', kind: 'deduct', plaintiff: 0, defendant: 0 },
 ];
 

@@ -1,5 +1,17 @@
 import { apiRequest, authFetch } from './api';
-import { CategoryRecord, DocumentRecord, DocumentSourceKey } from '../types';
+import { CategoryRecord, DocumentRecord, DocumentSourceKey, DocumentTypeKey } from '../types';
+
+export const DOC_TYPES: DocumentTypeKey[] = ['פסק דין', 'חוות דעת', 'תחשיב נזק', 'סיכומים', 'מאמר', 'ספר'];
+
+export const getFieldSuggestions = async (): Promise<string[]> => {
+  const payload = await apiRequest<{ suggestions: string[] }>('/documents/field-suggestions', { method: 'GET' });
+  return payload.suggestions ?? [];
+};
+
+export const getExpertSuggestions = async (): Promise<string[]> => {
+  const payload = await apiRequest<{ suggestions: string[] }>('/documents/expert-suggestions', { method: 'GET' });
+  return payload.suggestions ?? [];
+};
 
 export interface SearchDocumentsParams {
   q?: string;
@@ -34,8 +46,17 @@ export const searchDocuments = async (params: SearchDocumentsParams = {}): Promi
 
 export interface UploadDocumentInput {
   title: string;
+  docType: DocumentTypeKey;
   categoryId?: string;
   categoryName?: string;
+  field?: string;
+  expertName?: string;
+  articleAuthor?: string;
+  articleTitle?: string;
+  bookAuthor?: string;
+  bookName?: string;
+  bookChapter?: string;
+  notes?: string;
   summary?: string;
   file: File;
 }
@@ -43,9 +64,18 @@ export interface UploadDocumentInput {
 export const uploadDocument = async (input: UploadDocumentInput): Promise<DocumentRecord> => {
   const formData = new FormData();
   formData.append('title', input.title);
+  formData.append('docType', input.docType);
   if (input.categoryId) formData.append('categoryId', input.categoryId);
   if (input.categoryName) formData.append('categoryName', input.categoryName);
-  if (input.summary) formData.append('summary', input.summary);
+  if (input.field) formData.append('field', input.field);
+  if (input.expertName) formData.append('expertName', input.expertName);
+  if (input.articleAuthor) formData.append('articleAuthor', input.articleAuthor);
+  if (input.articleTitle) formData.append('articleTitle', input.articleTitle);
+  if (input.bookAuthor) formData.append('bookAuthor', input.bookAuthor);
+  if (input.bookName) formData.append('bookName', input.bookName);
+  if (input.bookChapter) formData.append('bookChapter', input.bookChapter);
+  if (input.notes) formData.append('notes', input.notes);
+  if (input.summary) formData.append('summary', input.summary ?? '');
   formData.append('file', input.file);
 
   const response = await authFetch('/documents/upload', { method: 'POST', body: formData });
@@ -99,6 +129,25 @@ export const uploadEmlBatch = async (files: File[]): Promise<UploadEmlBatchRespo
     throw new Error(text || 'upload_eml_batch_failed');
   }
   return (await response.json()) as UploadEmlBatchResponse;
+};
+
+export interface UploadPstResponse {
+  documents: DocumentRecord[];
+  emailsProcessed: number;
+  totalEmails: number;
+  attachmentsProcessed: number;
+  documentsCreated: number;
+}
+
+export const uploadPst = async (file: File): Promise<UploadPstResponse> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await authFetch('/documents/upload-pst', { method: 'POST', body: formData });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(text || 'upload_pst_failed');
+  }
+  return (await response.json()) as UploadPstResponse;
 };
 
 export const listCategories = async (): Promise<CategoryRecord[]> => {

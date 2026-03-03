@@ -17,6 +17,11 @@ const isDocx = (filename: string, mimeType?: string): boolean => {
   );
 };
 
+const isDoc = (filename: string, mimeType?: string): boolean => {
+  const ext = path.extname(filename).toLowerCase();
+  return mimeType === 'application/msword' || ext === '.doc';
+};
+
 export const extractTextFromAttachment = async (
   buffer: Buffer,
   filename: string,
@@ -51,7 +56,24 @@ export const extractTextFromAttachment = async (
     }
   }
 
-  // Legacy .doc is not supported without external converters.
+  // Legacy .doc - try Azure OCR if configured (word-extractor not available)
+  if (isDoc(filename, mimeType)) {
+    if (config.ocr.endpoint && config.ocr.key) {
+      try {
+        const { analyzeWithAzureOcr } = await import('./ocrClient');
+        const text = await analyzeWithAzureOcr(buffer);
+        return text.replace(/\s+/g, ' ').trim();
+      } catch (error) {
+        console.warn('[textExtraction] Azure OCR failed for DOC:', error);
+        // File will be saved but no text extracted
+        return '';
+      }
+    }
+    // If Azure OCR not configured, return empty (file will be saved but no text extracted)
+    console.warn('[textExtraction] DOC file requires Azure OCR configuration for text extraction');
+    return '';
+  }
+
   return '';
 };
 

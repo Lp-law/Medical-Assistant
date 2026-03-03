@@ -5,13 +5,8 @@ import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { authRouter } from './routes/auth';
-import { ingestRouter } from './routes/ingest';
 import { casesRouter } from './routes/cases';
-import { knowledgeRouter } from './routes/knowledge';
-import { literatureRouter } from './routes/literature';
-import { notificationsRouter } from './routes/notifications';
 import { startCaseRetentionJobs } from './jobs/caseRetention';
-import { startEmailFetcherJobs } from './jobs/emailFetcher';
 import { config } from './services/env';
 import { documentsRouter } from './routes/documents';
 import { categoriesRouter } from './routes/categories';
@@ -71,11 +66,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.use('/api/auth', authRouter);
-app.use('/api/ingest', requireDatabase, ingestRouter);
 app.use('/api/cases', requireDatabase, casesRouter);
-app.use('/api/knowledge', requireDatabase, knowledgeRouter);
-app.use('/api/literature', requireDatabase, literatureRouter);
-app.use('/api/notifications', requireDatabase, notificationsRouter);
 app.use('/api/documents', requireDatabase, documentsRouter);
 app.use('/api/categories', requireDatabase, categoriesRouter);
 app.use('/api/admin', requireDatabase, adminRouter);
@@ -85,6 +76,5 @@ const port = config.port;
 app.listen(port, () => {
   console.log(`LexMedical API listening on port ${port}`);
   startCaseRetentionJobs();
-  startEmailFetcherJobs();
 });
 

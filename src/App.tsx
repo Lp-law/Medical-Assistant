@@ -6,14 +6,10 @@ import {
   Search,
   UploadCloud,
   Bot,
-  Bell,
   UserCircle,
-  Mail,
 } from 'lucide-react';
 import ContextRibbon from './components/ContextRibbon';
-import LegalDisclaimer from './components/LegalDisclaimer';
 import DocumentsLibrary from './components/DocumentsLibrary';
-import { runEmailIngestNow } from './services/adminApi';
 import BotAssistantWidget from './components/BotAssistantWidget';
 import DamagesCalculator from './components/DamagesCalculator';
 
@@ -35,14 +31,11 @@ const SectionCard: React.FC<{ title: string; subtitle?: string; children: ReactN
 
 const App: React.FC = () => {
   const { user, logout } = useAuth();
-  const isAdmin = user?.role === 'admin';
   const [pageStack, setPageStack] = useState<Page[]>(['home']);
   const [homeSearch, setHomeSearch] = useState('');
   const [homeCategoryName, setHomeCategoryName] = useState<string | undefined>(undefined);
   const [documentsInitialTab, setDocumentsInitialTab] = useState<'search' | 'upload'>('search');
   const [botOpen, setBotOpen] = useState(false);
-  const [homeIngestLoading, setHomeIngestLoading] = useState(false);
-  const [homeIngestResult, setHomeIngestResult] = useState<string | null>(null);
 
   const handleLogout = () => {
     logout();
@@ -53,23 +46,6 @@ const App: React.FC = () => {
   const canGoBack = useMemo(() => pageStack.length > 1, [pageStack.length]);
   const pushPage = (page: Page) => setPageStack((prev) => [...prev, page]);
   const popPage = () => setPageStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
-
-  const handleManualEmailIngest = async () => {
-    setHomeIngestLoading(true);
-    setHomeIngestResult(null);
-    try {
-      const result = await runEmailIngestNow();
-      if (result.success) {
-        setHomeIngestResult(`הושלם: נמצאו ${result.processedMessages}, נוצרו ${result.documentsCreated}.`);
-      } else {
-        setHomeIngestResult(`נכשל: ${result.error ?? 'email_ingest_failed'}`);
-      }
-    } catch (e: any) {
-      setHomeIngestResult(e?.message ?? 'email_ingest_failed');
-    } finally {
-      setHomeIngestLoading(false);
-    }
-  };
 
   if (!user) {
     return <LoginScreen />;
@@ -84,9 +60,6 @@ const App: React.FC = () => {
             <span className="text-xs text-gold-light hidden md:inline">מרכז ידע משרדי - Lp-Law</span>
           </div>
           <div className="flex items-center gap-6 text-sm">
-            <button className="relative text-gold-light hover:text-gold transition" aria-label="התראות מערכת">
-              <Bell className="w-5 h-5" />
-            </button>
             <div className="flex items-center gap-2 text-pearl">
               <UserCircle className="w-6 h-6 text-gold-light" />
               <span>{user.username}</span>
@@ -154,27 +127,6 @@ const App: React.FC = () => {
                       </button>
                     </div>
                   </div>
-
-                  <div className="mt-4 rounded-card border border-pearl bg-white p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-navy">משיכת מסמכים מהמייל</p>
-                      <p className="text-xs text-slate mt-1">
-                        כפתור ידני שמריץ את משיכת המסמכים מה־IMAP (אדמין בלבד).
-                      </p>
-                      {homeIngestResult && <p className="text-xs mt-2 text-slate">{homeIngestResult}</p>}
-                      {!isAdmin && <p className="text-[11px] mt-2 text-slate-light">כדי להפעיל: התחבר עם משתמש Admin.</p>}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleManualEmailIngest}
-                      disabled={!isAdmin || homeIngestLoading}
-                      className="rounded-full bg-navy text-gold px-4 py-2 text-sm font-semibold hover:bg-navy/90 transition disabled:opacity-50 inline-flex items-center gap-2"
-                      title={!isAdmin ? 'נדרש משתמש Admin' : undefined}
-                    >
-                      <Mail className="w-4 h-4" />
-                      {homeIngestLoading ? 'מושך...' : 'משוך פסקי דין מהמייל'}
-                    </button>
-                  </div>
                 </SectionCard>
 
                 <SectionCard title="העלאת ידע" subtitle="המסך השני (מסמכים → העלאה)">
@@ -234,10 +186,8 @@ const App: React.FC = () => {
               </SectionCard>
             )}
           </div>
-          <LegalDisclaimer />
         </main>
       </div>
-
       <BotAssistantWidget
         open={botOpen}
         onOpenChange={setBotOpen}

@@ -18,12 +18,13 @@ type AttachmentCandidate = {
 
 const isSupportedAttachment = (filename: string, contentType?: string): boolean => {
   const lower = filename.toLowerCase();
-  // NOTE: legacy `.doc` is intentionally not supported (no converter in-app).
-  if (lower.endsWith('.pdf') || lower.endsWith('.docx')) return true;
+  // Support PDF, DOCX, and DOC (DOC requires Azure OCR for text extraction)
+  if (lower.endsWith('.pdf') || lower.endsWith('.docx') || lower.endsWith('.doc')) return true;
   if (!contentType) return false;
   return (
     contentType === 'application/pdf' ||
-    contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    contentType === 'application/msword'
   );
 };
 

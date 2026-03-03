@@ -139,6 +139,17 @@ model Document {
   topics        String[]         @default([])
   source        DocumentSource
 
+  // New metadata: סוג (type), תחום (field), מומחה, מאמר, ספר, הערות
+  docType       String?          // פסק דין | חוות דעת | תחשיב נזק | סיכומים | מאמר | ספר
+  field         String?          // תחום: אורטופדיה, נוירולוגיה וכו'
+  expertName    String?          // מומחה (לחוות דעת)
+  articleAuthor String?          // כותב מאמר
+  articleTitle  String?          // שם מאמר
+  bookAuthor    String?          // כותב ספר
+  bookName      String?          // שם ספר
+  bookChapter   String?          // פרק (כל פרק נפרד)
+  notes         String?          // הערות כלליות
+
   emailFrom     String?
   emailSubject  String?
   emailDate     DateTime?

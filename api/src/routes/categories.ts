@@ -6,7 +6,7 @@ import { requireAuth, requireRole } from '../middleware/auth';
 export const categoriesRouter = Router();
 categoriesRouter.use(requireAuth);
 
-const DEFAULT_CATEGORIES = ['פסקי דין', 'ספרות', 'תחשיבי נזק', 'סיכומים', 'חוות דעת'] as const;
+const DEFAULT_CATEGORIES = ['פסק דין', 'חוות דעת', 'תחשיב נזק', 'סיכומים', 'מאמר', 'ספר'] as const;
 
 const ensureDefaultCategories = async (): Promise<void> => {
   await Promise.all(

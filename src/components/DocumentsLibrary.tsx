@@ -1,8 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, UploadCloud, FileText, AlertTriangle } from 'lucide-react';
-import { CategoryRecord, DocumentRecord } from '../types';
-import { createCategory, listCategories, searchDocuments, updateDocumentTags, uploadDocument, uploadEml, uploadEmlBatch } from '../services/documentsApi';
-import LegalDisclaimer from './LegalDisclaimer';
+import { CategoryRecord, DocumentRecord, DocumentTypeKey } from '../types';
+import {
+  createCategory,
+  listCategories,
+  searchDocuments,
+  updateDocumentTags,
+  uploadDocument,
+  getFieldSuggestions,
+  getExpertSuggestions,
+  DOC_TYPES,
+} from '../services/documentsApi';
 import { useAuth } from '../context/AuthContext';
 import { openAttachment } from '../utils/openAttachment';
 
@@ -51,20 +59,24 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
 
   // Upload state
   const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadDocType, setUploadDocType] = useState<DocumentTypeKey>('פסק דין');
   const [uploadCategoryId, setUploadCategoryId] = useState<string>('');
+  const [uploadField, setUploadField] = useState('');
+  const [uploadExpertName, setUploadExpertName] = useState('');
+  const [uploadArticleAuthor, setUploadArticleAuthor] = useState('');
+  const [uploadArticleTitle, setUploadArticleTitle] = useState('');
+  const [uploadBookAuthor, setUploadBookAuthor] = useState('');
+  const [uploadBookName, setUploadBookName] = useState('');
+  const [uploadBookChapter, setUploadBookChapter] = useState('');
+  const [uploadNotes, setUploadNotes] = useState('');
   const [uploadSummary, setUploadSummary] = useState('');
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
-
-  // EML import state
-  const [emlFile, setEmlFile] = useState<File | null>(null);
-  const [emlLoading, setEmlLoading] = useState(false);
-  const [emlError, setEmlError] = useState<string | null>(null);
-  const [emlSuccess, setEmlSuccess] = useState<string | null>(null);
-  const [emlBatch, setEmlBatch] = useState<Array<{ name: string; status: 'pending' | 'uploading' | 'done' | 'error'; error?: string }>>([]);
-  const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const [fieldSuggestions, setFieldSuggestions] = useState<string[]>([]);
+  const [expertSuggestions, setExpertSuggestions] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [topicsDraft, setTopicsDraft] = useState('');
@@ -77,9 +89,15 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
       setCategoriesLoading(true);
       setCategoriesError(null);
       try {
-        const items = await listCategories();
+        const [items, fields, experts] = await Promise.all([
+          listCategories(),
+          getFieldSuggestions(),
+          getExpertSuggestions(),
+        ]);
         if (!cancelled) {
           setCategories(items);
+          setFieldSuggestions(fields);
+          setExpertSuggestions(experts);
           if (!uploadCategoryId && items[0]?.id) {
             setUploadCategoryId(items[0].id);
           }
@@ -159,7 +177,7 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
   }, [autoSearchOnMount, initialQuery, initialCategoryName, initialTab, categories]);
 
   const QUICK_CATEGORY_LABELS = useMemo(
-    () => (['פסקי דין', 'תחשיבי נזק', 'חוות דעת', 'סיכומים'] as const),
+    () => (['פסק דין', 'חוות דעת', 'תחשיב נזק', 'סיכומים', 'מאמר', 'ספר'] as const),
     [],
   );
 
@@ -205,7 +223,12 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
 
   const submitUpload = async () => {
     if (!uploadTitle.trim() || !uploadFile) {
-      setUploadError('חובה למלא שם מסמך ולבחור קובץ.');
+      setUploadError('חובה למלא שם מסמך ולבחור קובץ (PDF או Word).');
+      return;
+    }
+    const ext = (uploadFile.name ?? '').toLowerCase().split('.').pop();
+    if (ext !== 'pdf' && ext !== 'docx') {
+      setUploadError('ניתן להעלות רק קבצי PDF או Word (DOCX).');
       return;
     }
     setUploadLoading(true);
@@ -214,15 +237,36 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
     try {
       const doc = await uploadDocument({
         title: uploadTitle.trim(),
+        docType: uploadDocType,
         categoryId: uploadCategoryId || undefined,
+        field: uploadField.trim() || undefined,
+        expertName: uploadExpertName.trim() || undefined,
+        articleAuthor: uploadArticleAuthor.trim() || undefined,
+        articleTitle: uploadArticleTitle.trim() || undefined,
+        bookAuthor: uploadBookAuthor.trim() || undefined,
+        bookName: uploadBookName.trim() || undefined,
+        bookChapter: uploadBookChapter.trim() || undefined,
+        notes: uploadNotes.trim() || undefined,
         summary: uploadSummary.trim() || undefined,
         file: uploadFile,
       });
       setUploadSuccess(`המסמך "${doc.title}" נשמר בהצלחה.`);
       setUploadTitle('');
+      setUploadField('');
+      setUploadExpertName('');
+      setUploadArticleAuthor('');
+      setUploadArticleTitle('');
+      setUploadBookAuthor('');
+      setUploadBookName('');
+      setUploadBookChapter('');
+      setUploadNotes('');
       setUploadSummary('');
       setUploadFile(null);
-      // Optional: refresh search results
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      // Refresh suggestions for next time
+      const [fields, experts] = await Promise.all([getFieldSuggestions(), getExpertSuggestions()]);
+      setFieldSuggestions(fields);
+      setExpertSuggestions(experts);
       if (activeTab === 'search') {
         await runSearch();
       }
@@ -230,62 +274,6 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
       setUploadError(err?.message ?? 'upload_failed');
     } finally {
       setUploadLoading(false);
-    }
-  };
-
-  const submitEml = async (file: File) => {
-    setEmlLoading(true);
-    setEmlError(null);
-    setEmlSuccess(null);
-    try {
-      const result = await uploadEml(file);
-      setEmlSuccess(`הושלם: עובדו ${result.attachmentsProcessed} מצורפים ונוצרו ${result.documents?.length ?? 0} מסמכים.`);
-      setEmlFile(null);
-      // Optional: refresh search results if already in search tab
-      if (activeTab === 'search') {
-        await runSearch();
-      }
-    } catch (err: any) {
-      setEmlError(err?.message ?? 'upload_eml_failed');
-    } finally {
-      setEmlLoading(false);
-    }
-  };
-
-  const submitEmlBatch = async (files: File[]) => {
-    const emls = files.filter((f) => (f.name ?? '').toLowerCase().endsWith('.eml'));
-    if (!emls.length) {
-      setEmlError('לא נמצאו קבצי .eml בתיקייה שנבחרה');
-      return;
-    }
-
-    setEmlLoading(true);
-    setEmlError(null);
-    setEmlSuccess(null);
-    setEmlBatch(emls.map((f) => ({ name: f.name, status: 'uploading' as const })));
-
-    try {
-      const result = await uploadEmlBatch(emls);
-      const byName = new Map((result.results ?? []).map((r) => [r.fileName, r]));
-      setEmlBatch((prev) =>
-        prev.map((row) => {
-          const r = byName.get(row.name);
-          if (!r) return row;
-          if (r.status === 'ok') return { ...row, status: 'done' as const };
-          return { ...row, status: 'error' as const, error: r.error ?? 'upload_eml_failed' };
-        }),
-      );
-      const ok = (result.results ?? []).filter((r) => r.status === 'ok').length;
-      setEmlSuccess(
-        `הושלם: ${ok}/${emls.length} קבצי .eml עובדו. נוצרו ${result.documentsCreated} מסמכים מתוך ${result.attachmentsProcessed} מצורפים.`,
-      );
-      if (activeTab === 'search') {
-        await runSearch();
-      }
-    } catch (err: any) {
-      setEmlError(err?.message ?? 'upload_eml_batch_failed');
-    } finally {
-      setEmlLoading(false);
     }
   };
 
@@ -509,7 +497,6 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
           </div>
         )}
       </div>
-      <LegalDisclaimer />
     </div>
   );
 
@@ -519,148 +506,15 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
         <div className="card-accent" />
         <div className="card-head">
           <div>
-            <p className="text-sm font-semibold">ייבוא מייל ידני (.eml)</p>
-            <p className="text-xs text-slate-light">
-              גרור קובץ מייל מהמחשב – או בחר תיקייה (למשל: <span className="font-mono">CASES</span>) והמערכת תעבד את כל ה־.eml שבתוכה.
-            </p>
-          </div>
-        </div>
-        <div className="card-underline" />
-        <div className="card-body space-y-3">
-          <div
-            className={`rounded-card border border-pearl bg-pearl/40 p-6 text-center text-sm text-slate ${
-              emlLoading ? 'opacity-70' : 'hover:bg-pearl/60'
-            }`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              const f = e.dataTransfer?.files?.[0] ?? null;
-              if (!f) return;
-              setEmlFile(f);
-              submitEml(f).catch(() => undefined);
-            }}
-          >
-            <p className="font-semibold text-navy">גרור ושחרר כאן קובץ .eml</p>
-            <p className="text-xs text-slate-light mt-2">או בחר קובץ מהמחשב</p>
-            <div className="mt-3">
-              <input
-                type="file"
-                accept=".eml,message/rfc822"
-                disabled={emlLoading}
-                onChange={(e) => {
-                  const f = e.target.files?.[0] ?? null;
-                  if (!f) return;
-                  setEmlFile(f);
-                  submitEml(f).catch(() => undefined);
-                  e.target.value = '';
-                }}
-              />
-            </div>
-            {emlFile && <p className="mt-2 text-[11px] text-slate-light">נבחר: {emlFile.name}</p>}
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs font-semibold text-slate-light">ייבוא תיקייה (מומלץ ל־CASES)</p>
-            <div className="flex items-center gap-2">
-              <input
-                ref={folderInputRef}
-                type="file"
-                multiple
-                // @ts-ignore - supported in Chromium browsers (Edge/Chrome)
-                webkitdirectory=""
-                className="hidden"
-                disabled={emlLoading}
-                onChange={(e) => {
-                  const list = Array.from(e.target.files ?? []);
-                  if (!list.length) return;
-                  submitEmlBatch(list).catch(() => undefined);
-                  e.target.value = '';
-                }}
-              />
-              <button
-                type="button"
-                className="btn-outline text-sm px-4 py-2"
-                onClick={() => folderInputRef.current?.click()}
-                disabled={emlLoading}
-              >
-                בחר תיקייה ולעבד הכל
-              </button>
-            </div>
-          </div>
-
-          {emlBatch.length > 0 && (
-            <div className="rounded-card border border-pearl bg-white p-3">
-              <p className="text-xs font-semibold text-slate-light mb-2">סטטוס עיבוד ({emlBatch.length})</p>
-              <div className="max-h-56 overflow-auto space-y-1 text-xs">
-                {emlBatch.map((row) => (
-                  <div key={`eml-${row.name}`} className="flex items-center justify-between gap-3">
-                    <span className="truncate">{row.name}</span>
-                    <span className="shrink-0">
-                      {row.status === 'pending' && 'ממתין'}
-                      {row.status === 'uploading' && 'מעלה/מעבד...'}
-                      {row.status === 'done' && 'הושלם'}
-                      {row.status === 'error' && `שגיאה${row.error ? `: ${row.error}` : ''}`}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {emlError && (
-            <div className="state-block state-block--error text-sm">
-              <AlertTriangle className="state-block__icon" aria-hidden="true" />
-              <p className="state-block__title">ייבוא מייל נכשל</p>
-              <p className="state-block__description">{emlError}</p>
-            </div>
-          )}
-          {emlSuccess && (
-            <div className="state-block text-sm">
-              <UploadCloud className="state-block__icon" aria-hidden="true" />
-              <p className="state-block__title">ייבוא הושלם</p>
-              <p className="state-block__description">{emlSuccess}</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="card-shell">
-        <div className="card-accent" />
-        <div className="card-head">
-          <div>
-            <p className="text-sm font-semibold">העלאה ידנית</p>
-            <p className="text-xs text-slate-light">PDF / DOCX עם קטגוריה ותמצית (אופציונלי)</p>
+            <p className="text-sm font-semibold">העלאת מסמך</p>
+            <p className="text-xs text-slate-light">רק קבצי PDF ו-Word (DOCX). גרור קובץ או בחר מהמחשב. מלא סוג, תחום ופרטים לפי סוג המסמך.</p>
           </div>
         </div>
         <div className="card-underline" />
         <div className="card-body space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs font-semibold text-slate-light">קטגוריה מהירה</p>
-            <div className="segmented-control">
-              {QUICK_CATEGORY_LABELS.map((label) => {
-                const id = quickCategoryId(label);
-                if (!id) return null;
-                return (
-                  <button
-                    key={`upload-quick-${label}`}
-                    type="button"
-                    data-active={uploadCategoryId === id}
-                    onClick={() => setUploadCategoryId(id)}
-                    title={label}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="text-xs font-semibold text-slate-light">שם המסמך</label>
+              <label className="text-xs font-semibold text-slate-light">שם המסמך *</label>
               <input
                 className="mt-1 w-full rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
                 value={uploadTitle}
@@ -669,21 +523,175 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-light">קטגוריה</label>
+              <label className="text-xs font-semibold text-slate-light">סוג *</label>
               <select
                 className="mt-1 w-full rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
-                value={uploadCategoryId}
-                onChange={(e) => setUploadCategoryId(e.target.value)}
-                disabled={categoriesLoading}
+                value={uploadDocType}
+                onChange={(e) => setUploadDocType(e.target.value as DocumentTypeKey)}
               >
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.name}
+                {DOC_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
                   </option>
                 ))}
               </select>
             </div>
           </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-light">תחום (אורטופדיה, נוירולוגיה וכו׳)</label>
+            <input
+              className="mt-1 w-full rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+              list="field-suggestions"
+              value={uploadField}
+              onChange={(e) => setUploadField(e.target.value)}
+              placeholder="הקלד או בחר מהאפשרויות"
+            />
+            <datalist id="field-suggestions">
+              {fieldSuggestions.map((s) => (
+                <option key={s} value={s} />
+              ))}
+            </datalist>
+          </div>
+
+          {uploadDocType === 'חוות דעת' && (
+            <div>
+              <label className="text-xs font-semibold text-slate-light">מומחה שכתב את חוות הדעת</label>
+              <input
+                className="mt-1 w-full rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                list="expert-suggestions"
+                value={uploadExpertName}
+                onChange={(e) => setUploadExpertName(e.target.value)}
+                placeholder="לדוגמה: ד״ר גרוסמן"
+              />
+              <datalist id="expert-suggestions">
+                {expertSuggestions.map((s) => (
+                  <option key={s} value={s} />
+                ))}
+              </datalist>
+            </div>
+          )}
+
+          {uploadDocType === 'מאמר' && (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="text-xs font-semibold text-slate-light">שם כותב המאמר</label>
+                <input
+                  className="mt-1 w-full rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                  value={uploadArticleAuthor}
+                  onChange={(e) => setUploadArticleAuthor(e.target.value)}
+                  placeholder="שם הכותב"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-light">שם המאמר</label>
+                <input
+                  className="mt-1 w-full rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                  value={uploadArticleTitle}
+                  onChange={(e) => setUploadArticleTitle(e.target.value)}
+                  placeholder="כותרת המאמר"
+                />
+              </div>
+            </div>
+          )}
+
+          {uploadDocType === 'ספר' && (
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-light">כותב הספר</label>
+                <input
+                  className="mt-1 w-full rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                  value={uploadBookAuthor}
+                  onChange={(e) => setUploadBookAuthor(e.target.value)}
+                  placeholder="מי כותב הספר"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-light">שם הספר</label>
+                <input
+                  className="mt-1 w-full rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                  value={uploadBookName}
+                  onChange={(e) => setUploadBookName(e.target.value)}
+                  placeholder="שם הספר"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-light">פרק (מעלים כל פרק בנפרד)</label>
+                <input
+                  className="mt-1 w-full rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                  value={uploadBookChapter}
+                  onChange={(e) => setUploadBookChapter(e.target.value)}
+                  placeholder="מספר/שם הפרק"
+                />
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-semibold text-slate-light">הערות (אופציונלי)</label>
+            <textarea
+              className="mt-1 w-full rounded-card border border-pearl bg-white p-3 text-sm focus:border-gold"
+              rows={2}
+              value={uploadNotes}
+              onChange={(e) => setUploadNotes(e.target.value)}
+              placeholder="הערות כלליות על המסמך"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-light">תמצית (אופציונלי)</label>
+            <textarea
+              className="mt-1 w-full rounded-card border border-pearl bg-white p-3 text-sm focus:border-gold"
+              rows={2}
+              value={uploadSummary}
+              onChange={(e) => setUploadSummary(e.target.value)}
+              placeholder="אם ריק – המערכת תנסה לחלץ תמצית אוטומטית מהקובץ."
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-light">קובץ (PDF או Word בלבד) *</label>
+            <div
+              className={`mt-1 rounded-card border-2 border-dashed border-pearl bg-pearl/30 p-6 text-center text-sm ${
+                uploadLoading ? 'opacity-70' : 'hover:bg-pearl/50'
+              }`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const f = e.dataTransfer?.files?.[0];
+                if (!f) return;
+                const ext = (f.name ?? '').toLowerCase().split('.').pop();
+                if (ext === 'pdf' || ext === 'docx') setUploadFile(f);
+              }}
+            >
+              <p className="font-semibold text-navy">גרור קובץ PDF או DOCX לכאן</p>
+              <p className="text-xs text-slate-light mt-1">או</p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="mt-2 block w-full text-sm text-slate file:mr-2 file:rounded file:border-0 file:bg-navy file:px-4 file:py-2 file:text-gold file:text-sm"
+                onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+              />
+            </div>
+            {uploadFile && (
+              <p className="mt-1 text-[11px] text-slate-light">
+                נבחר: {uploadFile.name} ({Math.round(uploadFile.size / 1024)} KB)
+              </p>
+            )}
+          </div>
+
+          <div className="flex justify-end">
+            <button className="btn-primary px-5" onClick={submitUpload} disabled={uploadLoading}>
+              <UploadCloud className="w-4 h-4" />
+              {uploadLoading ? 'מעלה...' : 'שמור מסמך'}
+            </button>
+          </div>
+
           {categoriesError && (
             <div className="state-block state-block--error text-sm">
               <AlertTriangle className="state-block__icon" aria-hidden="true" />
@@ -691,57 +699,6 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
               <p className="state-block__description">{categoriesError}</p>
             </div>
           )}
-          {user?.role === 'admin' && (
-            <div className="rounded-card border border-pearl bg-pearl/40 p-4 space-y-2">
-              <p className="text-xs font-semibold text-slate-light">הוסף קטגוריה חדשה</p>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <input
-                  className="flex-1 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
-                  value={newCategoryName}
-                  onChange={(e) => setNewCategoryName(e.target.value)}
-                  placeholder='לדוגמה: "תקדימים"'
-                />
-                <button
-                  type="button"
-                  className="btn-outline text-sm px-4 py-2"
-                  onClick={handleCreateCategory}
-                  disabled={creatingCategory || !newCategoryName.trim()}
-                >
-                  {creatingCategory ? 'שומר...' : 'צור'}
-                </button>
-              </div>
-            </div>
-          )}
-          <div>
-            <label className="text-xs font-semibold text-slate-light">תמצית (אופציונלי)</label>
-            <textarea
-              className="mt-1 w-full rounded-card border border-pearl bg-white p-3 text-sm focus:border-gold"
-              rows={4}
-              value={uploadSummary}
-              onChange={(e) => setUploadSummary(e.target.value)}
-              placeholder="אם ריק – המערכת תנסה לחלץ תמצית אוטומטית מהקובץ."
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-light">קובץ מצורף</label>
-            <input
-              className="mt-1 w-full rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
-              type="file"
-              accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-              onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
-            />
-            {uploadFile && (
-              <p className="mt-1 text-[11px] text-slate-light">
-                נבחר: {uploadFile.name} ({Math.round(uploadFile.size / 1024)}KB)
-              </p>
-            )}
-          </div>
-          <div className="flex justify-end">
-            <button className="btn-primary px-5" onClick={submitUpload} disabled={uploadLoading}>
-              <UploadCloud className="w-4 h-4" />
-              {uploadLoading ? 'מעלה...' : 'שמור מסמך'}
-            </button>
-          </div>
           {uploadError && (
             <div className="state-block state-block--error text-sm">
               <AlertTriangle className="state-block__icon" aria-hidden="true" />
@@ -758,7 +715,6 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
           )}
         </div>
       </div>
-      <LegalDisclaimer />
     </div>
   );
 
