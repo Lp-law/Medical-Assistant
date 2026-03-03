@@ -63,6 +63,15 @@ const normalizeHebrewKey = (value: string): string =>
     .replace(/\s+/g, '')
     .toLowerCase();
 
+// שורות שהוסרו מהמערכת – מסירים גם מנתונים שמורים (localStorage)
+const REMOVED_ROW_NAMES_NORMALIZED = [
+  normalizeHebrewKey('אורתופד'),
+  normalizeHebrewKey('הוצאות עודפות בגין נסיעות לחו"ל'),
+];
+
+const isRemovedRow = (name: string): boolean =>
+  REMOVED_ROW_NAMES_NORMALIZED.includes(normalizeHebrewKey(name));
+
 const inferRowKind = (name: string): HeadRowKind => {
   const key = normalizeHebrewKey(name);
   // מל"ל is a classic deduction line item
@@ -130,14 +139,16 @@ const DamagesCalculator: React.FC = () => {
           version: 3,
           title: String(parsed.title ?? 'מחשבון נזק'),
           rows: Array.isArray(parsed.rows)
-            ? (parsed.rows as any[]).map((r) => ({
-                id: String(r.id ?? uid()),
-                enabled: Boolean(r.enabled ?? true),
-                name: String(r.name ?? ''),
-                kind: (r.kind === 'deduct' || r.kind === 'add') ? r.kind : inferRowKind(String(r.name ?? '')),
-                plaintiff: safeNumber(r.plaintiff),
-                defendant: safeNumber(r.defendant),
-              }))
+            ? (parsed.rows as any[])
+                .filter((r) => !isRemovedRow(String(r.name ?? '')))
+                .map((r) => ({
+                  id: String(r.id ?? uid()),
+                  enabled: Boolean(r.enabled ?? true),
+                  name: String(r.name ?? ''),
+                  kind: (r.kind === 'deduct' || r.kind === 'add') ? r.kind : inferRowKind(String(r.name ?? '')),
+                  plaintiff: safeNumber(r.plaintiff),
+                  defendant: safeNumber(r.defendant),
+                }))
             : DEFAULT_ROWS,
           contributoryNegligencePercent: clampPercent(safeNumber((parsed as any).contributoryNegligencePercent)),
           reductions: Array.isArray((parsed as any).reductions)
@@ -165,14 +176,16 @@ const DamagesCalculator: React.FC = () => {
           version: 3,
           title: String(parsed.title ?? 'מחשבון נזק'),
           rows: Array.isArray(parsed.rows)
-            ? (parsed.rows as any[]).map((r) => ({
-                id: String(r.id ?? uid()),
-                enabled: Boolean(r.enabled ?? true),
-                name: String(r.name ?? ''),
-                kind: inferRowKind(String(r.name ?? '')),
-                plaintiff: safeNumber(r.plaintiff),
-                defendant: safeNumber(r.defendant),
-              }))
+            ? (parsed.rows as any[])
+                .filter((r) => !isRemovedRow(String(r.name ?? '')))
+                .map((r) => ({
+                  id: String(r.id ?? uid()),
+                  enabled: Boolean(r.enabled ?? true),
+                  name: String(r.name ?? ''),
+                  kind: inferRowKind(String(r.name ?? '')),
+                  plaintiff: safeNumber(r.plaintiff),
+                  defendant: safeNumber(r.defendant),
+                }))
             : DEFAULT_ROWS,
           contributoryNegligencePercent: clampPercent(safeNumber((parsed as any).contributoryNegligencePercent)),
           reductions: Array.isArray((parsed as any).reductions)
@@ -204,14 +217,16 @@ const DamagesCalculator: React.FC = () => {
           version: 3,
           title: String(parsed.title ?? 'מחשבון נזק'),
           rows: Array.isArray(parsed.rows)
-            ? (parsed.rows as any[]).map((r) => ({
-                id: String(r.id ?? uid()),
-                enabled: Boolean(r.enabled ?? true),
-                name: String(r.name ?? ''),
-                kind: inferRowKind(String(r.name ?? '')),
-                plaintiff: safeNumber(r.plaintiff),
-                defendant: safeNumber(r.defendant),
-              }))
+            ? (parsed.rows as any[])
+                .filter((r) => !isRemovedRow(String(r.name ?? '')))
+                .map((r) => ({
+                  id: String(r.id ?? uid()),
+                  enabled: Boolean(r.enabled ?? true),
+                  name: String(r.name ?? ''),
+                  kind: inferRowKind(String(r.name ?? '')),
+                  plaintiff: safeNumber(r.plaintiff),
+                  defendant: safeNumber(r.defendant),
+                }))
             : DEFAULT_ROWS,
           contributoryNegligencePercent: clampPercent(safeNumber(contributory)),
           reductions: [
@@ -458,14 +473,16 @@ const DamagesCalculator: React.FC = () => {
         version: 3,
         title: String(parsed.title ?? 'מחשבון נזק'),
         rows: Array.isArray(parsed.rows)
-          ? (parsed.rows as any[]).map((r) => ({
-              id: String(r.id ?? uid()),
-              enabled: Boolean(r.enabled ?? true),
-              name: String(r.name ?? ''),
-              kind: inferRowKind(String(r.name ?? '')),
-              plaintiff: safeNumber(r.plaintiff),
-              defendant: safeNumber(r.defendant),
-            }))
+          ? (parsed.rows as any[])
+              .filter((r) => !isRemovedRow(String(r.name ?? '')))
+              .map((r) => ({
+                id: String(r.id ?? uid()),
+                enabled: Boolean(r.enabled ?? true),
+                name: String(r.name ?? ''),
+                kind: inferRowKind(String(r.name ?? '')),
+                plaintiff: safeNumber(r.plaintiff),
+                defendant: safeNumber(r.defendant),
+              }))
           : [],
         contributoryNegligencePercent: clampPercent(safeNumber(contributory)),
         reductions: [
