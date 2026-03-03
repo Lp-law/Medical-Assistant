@@ -150,6 +150,11 @@ export const uploadPst = async (file: File): Promise<UploadPstResponse> => {
   return (await response.json()) as UploadPstResponse;
 };
 
+export const deleteAllDocuments = async (): Promise<{ deleted: number }> => {
+  const payload = await apiRequest<{ deleted: number }>('/admin/documents/all', { method: 'DELETE' });
+  return payload;
+};
+
 export const listCategories = async (): Promise<CategoryRecord[]> => {
   const payload = await apiRequest<{ categories: CategoryRecord[] }>('/categories', { method: 'GET' });
   return payload.categories ?? [];

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, UploadCloud, FileText, AlertTriangle } from 'lucide-react';
+import { Search, UploadCloud, FileText, AlertTriangle, Trash2 } from 'lucide-react';
 import { CategoryRecord, DocumentRecord, DocumentTypeKey } from '../types';
 import {
   createCategory,
@@ -9,6 +9,7 @@ import {
   uploadDocument,
   getFieldSuggestions,
   getExpertSuggestions,
+  deleteAllDocuments,
   DOC_TYPES,
 } from '../services/documentsApi';
 import { useAuth } from '../context/AuthContext';
@@ -77,6 +78,9 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
   const [fieldSuggestions, setFieldSuggestions] = useState<string[]>([]);
   const [expertSuggestions, setExpertSuggestions] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [deleteAllConfirm, setDeleteAllConfirm] = useState(false);
+  const [deleteAllLoading, setDeleteAllLoading] = useState(false);
+  const [deleteAllError, setDeleteAllError] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [topicsDraft, setTopicsDraft] = useState('');
@@ -183,6 +187,21 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
 
   const quickCategoryId = (name: (typeof QUICK_CATEGORY_LABELS)[number]): string | undefined => {
     return categories.find((c) => c.name === name)?.id;
+  };
+
+  const handleDeleteAllDocuments = async () => {
+    setDeleteAllLoading(true);
+    setDeleteAllError(null);
+    try {
+      const { deleted } = await deleteAllDocuments();
+      setResults([]);
+      setDeleteAllConfirm(false);
+      setSearchError(null);
+    } catch (err: any) {
+      setDeleteAllError(err?.message ?? 'מחיקה נכשלה');
+    } finally {
+      setDeleteAllLoading(false);
+    }
   };
 
   const openEditTags = (doc: DocumentRecord) => {
@@ -742,10 +761,57 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
           >
             <UploadCloud className="w-4 h-4" /> העלאה
           </button>
+          {user?.role === 'admin' && (
+            <button
+              type="button"
+              className="rounded-full px-4 py-2 text-sm font-semibold flex items-center gap-2 border border-red-300 text-red-700 hover:bg-red-50 transition"
+              onClick={() => setDeleteAllConfirm(true)}
+              title="מחיקת כל המסמכים ממאגר הידע (אדמין בלבד)"
+            >
+              <Trash2 className="w-4 h-4" /> מחק את כל המסמכים
+            </button>
+          )}
         </div>
       </div>
 
       {activeTab === 'search' ? searchView : uploadView}
+
+      {deleteAllConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+          <div className="card-shell max-w-md w-full">
+            <div className="card-accent bg-red-600" />
+            <div className="card-head">
+              <h4 className="text-base font-semibold text-navy">מחיקת כל המסמכים</h4>
+              <button type="button" onClick={() => !deleteAllLoading && setDeleteAllConfirm(false)} className="text-xs text-slate-light hover:text-navy">
+                סגור
+              </button>
+            </div>
+            <div className="card-underline" />
+            <div className="card-body space-y-3 text-sm text-slate">
+              <p>האם למחוק את <strong>כל</strong> המסמכים ממאגר הידע? לא ניתן לשחזר. אחרי המחיקה תוכל להעלות מסמכים מחדש לפי הקטגוריות החדשות.</p>
+              {deleteAllError && <p className="text-red-600 font-semibold">{deleteAllError}</p>}
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  className="btn-outline px-4 py-2"
+                  onClick={() => setDeleteAllConfirm(false)}
+                  disabled={deleteAllLoading}
+                >
+                  ביטול
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full px-4 py-2 text-sm font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                  onClick={handleDeleteAllDocuments}
+                  disabled={deleteAllLoading}
+                >
+                  {deleteAllLoading ? 'מוחק...' : 'מחק הכל'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {selectedDoc && (
         <div
