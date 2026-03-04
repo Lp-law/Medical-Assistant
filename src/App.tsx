@@ -1,210 +1,32 @@
-import React, { ReactNode, useMemo, useState } from 'react';
-import { useAuth } from './context/AuthContext';
-import LoginScreen from './components/LoginScreen';
-import {
-  Calculator,
-  Search,
-  UploadCloud,
-  Bot,
-  UserCircle,
-} from 'lucide-react';
-import ContextRibbon from './components/ContextRibbon';
-import DocumentsLibrary from './components/DocumentsLibrary';
-import BotAssistantWidget from './components/BotAssistantWidget';
+import React, { useState } from 'react';
+import { Calculator } from 'lucide-react';
 import DamagesCalculator from './components/DamagesCalculator';
-
-type Page = 'home' | 'documents' | 'calculator';
-
-const SectionCard: React.FC<{ title: string; subtitle?: string; children: ReactNode }> = ({ title, subtitle, children }) => (
-  <section className="rounded-card border border-pearl bg-white shadow-card-xl">
-    <div className="h-1.5 w-full rounded-t-card bg-navy" />
-    <div className="p-6">
-      <div className="flex items-center justify-between text-navy">
-        <h2 className="text-lg font-semibold">{title}</h2>
-        {subtitle && <span className="text-xs text-slate">{subtitle}</span>}
-      </div>
-      <div className="mt-2 w-12 border-b-2 border-gold rounded-full" />
-      <div className="mt-6 text-slate">{children}</div>
-    </div>
-  </section>
-);
+import BotAssistantWidget from './components/BotAssistantWidget';
 
 const App: React.FC = () => {
-  const { user, logout, initializing } = useAuth();
-  const [pageStack, setPageStack] = useState<Page[]>(['home']);
-  const [homeSearch, setHomeSearch] = useState('');
-  const [homeCategoryName, setHomeCategoryName] = useState<string | undefined>(undefined);
-  const [documentsInitialTab, setDocumentsInitialTab] = useState<'search' | 'upload'>('search');
   const [botOpen, setBotOpen] = useState(false);
-
-  const handleLogout = () => {
-    logout();
-    setPageStack(['home']);
-  };
-
-  const currentPage = pageStack[pageStack.length - 1] ?? 'home';
-  const canGoBack = useMemo(() => pageStack.length > 1, [pageStack.length]);
-  const pushPage = (page: Page) => setPageStack((prev) => [...prev, page]);
-  const popPage = () => setPageStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
-
-  if (initializing) {
-    return (
-      <div className="min-h-screen bg-pearl flex items-center justify-center" dir="rtl">
-        <p className="text-navy">טוען...</p>
-      </div>
-    );
-  }
-  if (!user) {
-    return <LoginScreen />;
-  }
 
   return (
     <div className="min-h-screen bg-pearl text-navy" dir="rtl">
       <div className="flex flex-col min-h-screen">
         <header className="h-16 bg-navy text-gold flex items-center justify-between px-6 shadow-lg">
           <div className="flex items-center gap-3">
-            <span className="text-xl font-semibold brand-mark">LexMedical</span>
-            <span className="text-xs text-gold-light hidden md:inline">מרכז ידע משרדי - Lp-Law</span>
-          </div>
-          <div className="flex items-center gap-6 text-sm">
-            <div className="flex items-center gap-2 text-pearl">
-              <UserCircle className="w-6 h-6 text-gold-light" />
-              <span>{user.username}</span>
+            <Calculator className="w-7 h-7 text-gold" aria-hidden="true" />
+            <div>
+              <span className="text-xl font-semibold brand-mark">LexMedical</span>
+              <span className="text-xs text-gold-light block md:inline md:mr-3">מחשבון נזק – Lp-Law</span>
             </div>
-            <button onClick={handleLogout} className="text-gold hover:text-gold-light transition">
-              התנתק
-            </button>
           </div>
         </header>
 
-        <ContextRibbon
-          mode="מרכז ידע משרדי"
-          caseName={
-            currentPage === 'documents' ? 'מסמכים וחיפוש' : currentPage === 'calculator' ? 'מחשבון נזק' : 'דף הבית'
-          }
-          isReadOnly={false}
-          onBack={canGoBack ? popPage : undefined}
-        />
-        <main className="flex-1 bg-pearl overflow-y-auto">
-          <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
-            {currentPage === 'home' && (
-              <>
-                <SectionCard title="חיפוש במאגר הידע" subtitle="מילים חופשיות + עוזר AI">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="rounded-card border border-pearl bg-white p-4">
-                      <label className="text-xs font-semibold text-slate-light">חיפוש מהיר</label>
-                      <div className="mt-2 flex gap-2">
-                        <div className="relative flex-1">
-                          <Search className="w-4 h-4 absolute top-3 right-3 text-slate-light" />
-                          <input
-                            className="w-full rounded-full border border-pearl bg-pearl/60 pr-10 pl-3 py-2 text-sm focus:border-gold focus:ring-1 focus:ring-gold outline-none transition"
-                            value={homeSearch}
-                            onChange={(e) => setHomeSearch(e.target.value)}
-                            placeholder="לדוגמה: שם מומחה / אבחנה / הלכה / מונח רפואי..."
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDocumentsInitialTab('search');
-                            pushPage('documents');
-                          }}
-                          className="rounded-full bg-navy text-gold px-4 py-2 text-sm font-semibold hover:bg-navy/90 transition"
-                        >
-                          חפש
-                        </button>
-                      </div>
-                      <p className="mt-3 text-xs text-slate">
-                        החיפוש המלא נמצא במסך “מסמכים”. כאן זה קיצור דרך.
-                      </p>
-                    </div>
-
-                    <div className="rounded-card border border-pearl bg-white p-4 flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-semibold text-navy">עוזר חיפוש (AI)</p>
-                        <p className="text-xs text-slate mt-1">לחץ כדי לפתוח את הבוט (או הכפתור הצף בפינה).</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setBotOpen(true)}
-                        className="rounded-full border border-pearl text-slate px-4 py-2 text-sm font-semibold inline-flex items-center gap-2 hover:bg-pearl/50 transition"
-                      >
-                        <Bot className="w-4 h-4 text-gold" />
-                        פתח בוט
-                      </button>
-                    </div>
-                  </div>
-                </SectionCard>
-
-                <SectionCard title="העלאת ידע" subtitle="המסך השני (מסמכים → העלאה)">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-navy">העלאה ל־4 קטגוריות + יצירת קטגוריות</p>
-                      <p className="text-xs text-slate mt-1">נמצא במסך “מסמכים”, בלשונית “העלאה”.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDocumentsInitialTab('upload');
-                        pushPage('documents');
-                      }}
-                      className="rounded-full bg-gold text-navy px-5 py-2 text-sm font-semibold hover:bg-gold-light transition inline-flex items-center gap-2"
-                    >
-                      <UploadCloud className="w-4 h-4" />
-                      עבור להעלאת ידע
-                    </button>
-                  </div>
-                </SectionCard>
-
-                <SectionCard title="כלים" subtitle="חישוב מהיר בתוך המערכת">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <button
-                      type="button"
-                      onClick={() => pushPage('calculator')}
-                      className="rounded-card border border-pearl bg-white p-5 text-right hover:shadow-card-xl transition"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-lg font-semibold text-navy">מחשבון נזק</p>
-                          <p className="text-xs text-slate mt-1">טבלת ראשי נזק עם תרחישי תובע/נתבע/ממוצע והפחתות.</p>
-                        </div>
-                        <Calculator className="w-6 h-6 text-gold" />
-                      </div>
-                    </button>
-                  </div>
-                </SectionCard>
-              </>
-            )}
-
-            {currentPage === 'documents' && (
-              <SectionCard title="מסמכים" subtitle="חיפוש, העלאה, תיוג">
-                <DocumentsLibrary
-                  initialTab={documentsInitialTab}
-                  initialQuery={homeSearch}
-                  initialCategoryName={homeCategoryName}
-                  autoSearchOnMount
-                />
-              </SectionCard>
-            )}
-
-            {currentPage === 'calculator' && (
-              <SectionCard title="מחשבון נזק" subtitle="טבלה דינמית + שמירה מקומית">
-                <DamagesCalculator />
-              </SectionCard>
-            )}
+        <main className="flex-1 overflow-y-auto">
+          <div className="max-w-5xl mx-auto px-4 py-6 md:px-6 md:py-8">
+            <DamagesCalculator />
           </div>
         </main>
       </div>
-      <BotAssistantWidget
-        open={botOpen}
-        onOpenChange={setBotOpen}
-        onOpenDocumentsWithQuery={(q, categoryName) => {
-          setHomeSearch(q);
-          setHomeCategoryName(categoryName);
-          setDocumentsInitialTab('search');
-          setPageStack(['home', 'documents']);
-        }}
-      />
+
+      <BotAssistantWidget mode="calculator" open={botOpen} onOpenChange={setBotOpen} />
     </div>
   );
 };

@@ -4,7 +4,8 @@ import { assistantSearch, AssistantDocumentHit } from '../services/assistantApi'
 import { openAttachment } from '../utils/openAttachment';
 
 type Props = {
-  onOpenDocumentsWithQuery: (query: string, categoryName?: string) => void;
+  mode?: 'documents' | 'calculator';
+  onOpenDocumentsWithQuery?: (query: string, categoryName?: string) => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 };
@@ -69,7 +70,7 @@ type ChatTurn =
       limit: number;
     };
 
-const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: controlledOpen, onOpenChange }) => {
+const BotAssistantWidget: React.FC<Props> = ({ mode = 'documents', onOpenDocumentsWithQuery, open: controlledOpen, onOpenChange }) => {
   const [internalOpen, setInternalOpen] = useState(false);
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
@@ -137,6 +138,51 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
     const nextLimit = Math.min((lastAssistant?.limit ?? 10) + 10, 50);
     await ask({ question: lastUser.text, limit: nextLimit });
   };
+
+  if (mode === 'calculator') {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="fixed bottom-5 right-5 z-40 rounded-full bg-navy text-gold shadow-card-xl px-5 py-3 hover:bg-navy/90 transition inline-flex items-center gap-3 animate-bot-float"
+          aria-label="פתח עוזר"
+        >
+          <Bot className="w-5 h-5" />
+          <span className="text-sm font-semibold">עוזר</span>
+        </button>
+        {isOpen && (
+          <div className="fixed inset-0 z-50 bg-black/30 flex items-end md:items-center justify-center p-4" dir="rtl">
+            <div className="w-full max-w-md rounded-card bg-white shadow-card-xl border border-pearl overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-pearl">
+                <div className="inline-flex items-center gap-3">
+                  <div className="bot-mascot bot-mascot--idle" aria-hidden="true">
+                    <div className="bot-mascot__head">
+                      <div className="bot-mascot__eye bot-mascot__eye--left" />
+                      <div className="bot-mascot__eye bot-mascot__eye--right" />
+                      <div className="bot-mascot__mouth" />
+                    </div>
+                    <div className="bot-mascot__legs">
+                      <div className="bot-mascot__leg bot-mascot__leg--left" />
+                      <div className="bot-mascot__leg bot-mascot__leg--right" />
+                    </div>
+                  </div>
+                  <span className="text-sm font-semibold text-navy">עוזר למחשבון הנזק</span>
+                </div>
+                <button type="button" onClick={() => setOpen(false)} className="text-slate hover:text-navy transition" aria-label="סגור">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="px-5 py-6 text-slate text-sm">
+                <p className="mb-3">בגרסאות הבאות תוכל לשאול כאן שאלות על חישובים, הפחתות, אשם תורם ואחוזי שכ&quot;ט.</p>
+                <p className="text-xs text-slate-light">המחשבון עצמו נמצא למעלה – הוסף שורות, הזן סכומים וייצא ל-CSV או JSON.</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
 
   return (
     <>
@@ -251,7 +297,7 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
                                       <button
                                         key={`${t.id}-${q}`}
                                         type="button"
-                                        onClick={() => onOpenDocumentsWithQuery(q, t.categoryName)}
+                                        onClick={() => onOpenDocumentsWithQuery?.(q, t.categoryName)}
                                         className="rounded-full border border-pearl bg-white px-3 py-1 text-xs text-navy hover:bg-pearl/50 transition inline-flex items-center gap-1"
                                         title="פתח במסך מסמכים"
                                       >
@@ -302,7 +348,7 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
                                               className="text-xs text-slate hover:text-navy transition inline-flex items-center gap-1"
                                               onClick={(e) => {
                                                 e.stopPropagation();
-                                                onOpenDocumentsWithQuery(d.title, d.categoryName);
+                                                onOpenDocumentsWithQuery?.(d.title, d.categoryName);
                                               }}
                                               title="פתח במסך מסמכים"
                                             >
@@ -440,8 +486,8 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
                 <button
                   type="button"
                   className="btn-outline text-[11px] px-4 py-2 inline-flex items-center gap-2"
-                  onClick={() => {
-                    onOpenDocumentsWithQuery(selectedDoc.title, selectedDoc.categoryName);
+                    onClick={() => {
+                    onOpenDocumentsWithQuery?.(selectedDoc.title, selectedDoc.categoryName);
                     setSelectedDoc(null);
                     setOpen(false);
                   }}
