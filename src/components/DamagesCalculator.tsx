@@ -1,6 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Download, Plus, Trash2, Upload, RotateCcw } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Download, Plus, Trash2, Upload, RotateCcw, Undo2, Redo2, LayoutTemplate, FileText, X } from 'lucide-react';
 import { storageGetItem, storageSetItem } from '../utils/storageGuard';
+import { getBuiltInTemplates, getSavedTemplates, saveTemplate, deleteSavedTemplate, cloneSheetWithNewIds, type TemplateItem } from '../utils/damagesTemplates';
+import { exportDamagesToDocx } from '../utils/exportDamagesDocx';
 
 type HeadRowKind = 'add' | 'deduct';
 
@@ -147,9 +149,63 @@ const validateImportedSheet = (parsed: unknown): parsed is { version: number; ti
   return true;
 };
 
+const MAX_UNDO = 50;
+
 const DamagesCalculator: React.FC = () => {
   const importRef = useRef<HTMLInputElement | null>(null);
   const [storageSaveError, setStorageSaveError] = useState<string | null>(null);
+  const [past, setPast] = useState<Sheet[]>([]);
+  const [future, setFuture] = useState<Sheet[]>([]);
+  const [templateLibraryOpen, setTemplateLibraryOpen] = useState(false);
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState('');
+  const [newTemplateColor, setNewTemplateColor] = useState('#0ea5e9');
+  const [savedTemplates, setSavedTemplates] = useState<TemplateItem[]>(() => getSavedTemplates());
+
+  const pastRef = useRef<Sheet[]>([]);
+  const futureRef = useRef<Sheet[]>([]);
+  const [, setHistoryVersion] = useState(0);
+
+  const pushHistory = useCallback((current: Sheet) => {
+    pastRef.current = [...pastRef.current, current].slice(-MAX_UNDO);
+    futureRef.current = [];
+    setPast(pastRef.current);
+    setFuture([]);
+    setHistoryVersion((v) => v + 1);
+  }, []);
+
+  const setSheetWithHistory = useCallback((next: Sheet | ((prev: Sheet) => Sheet)) => {
+    setSheet((prev) => {
+      const nextSheet = typeof next === 'function' ? next(prev) : next;
+      pushHistory(prev);
+      return nextSheet;
+    });
+  }, [pushHistory]);
+
+  const undo = useCallback(() => {
+    if (pastRef.current.length === 0) return;
+    setSheet((current) => {
+      const last = pastRef.current.pop()!;
+      futureRef.current = [current, ...futureRef.current];
+      setPast([...pastRef.current]);
+      setFuture([...futureRef.current]);
+      setHistoryVersion((v) => v + 1);
+      return last;
+    });
+  }, []);
+
+  const redo = useCallback(() => {
+    if (futureRef.current.length === 0) return;
+    setSheet((current) => {
+      const first = futureRef.current.shift()!;
+      pastRef.current = [...pastRef.current, current];
+      setPast([...pastRef.current]);
+      setFuture([...futureRef.current]);
+      setHistoryVersion((v) => v + 1);
+      return first;
+    });
+  }, []);
+
   const [sheet, setSheet] = useState<Sheet>(() => {
     try {
       // Prefer v3; if missing, try migrating from v2/v1.
@@ -344,16 +400,16 @@ const DamagesCalculator: React.FC = () => {
   }, [sheet.attorneyFeePercent, sheet.plaintiffExpenses, totals.plaintiffNet, totals.defendantNet, totals.avgNet]);
 
   const updateRow = (id: string, patch: Partial<HeadRow>) => {
-    setSheet((prev) => ({
+    setSheetWithHistory((prev) => ({
       ...prev,
       rows: prev.rows.map((r) => (r.id === id ? { ...r, ...patch } : r)),
     }));
   };
 
-  const removeRow = (id: string) => setSheet((prev) => ({ ...prev, rows: prev.rows.filter((r) => r.id !== id) }));
+  const removeRow = (id: string) => setSheetWithHistory((prev) => ({ ...prev, rows: prev.rows.filter((r) => r.id !== id) }));
 
   const addRow = () =>
-    setSheet((prev) => ({
+    setSheetWithHistory((prev) => ({
       ...prev,
       rows: [
         ...prev.rows,
@@ -362,23 +418,22 @@ const DamagesCalculator: React.FC = () => {
     }));
 
   const updateReduction = (id: string, patch: Partial<Reduction>) => {
-    setSheet((prev) => ({
+    setSheetWithHistory((prev) => ({
       ...prev,
       reductions: prev.reductions.map((r) => (r.id === id ? { ...r, ...patch } : r)),
     }));
   };
 
   const removeReduction = (id: string) =>
-    setSheet((prev) => ({ ...prev, reductions: prev.reductions.filter((r) => r.id !== id) }));
+    setSheetWithHistory((prev) => ({ ...prev, reductions: prev.reductions.filter((r) => r.id !== id) }));
 
   const addReduction = () =>
-    setSheet((prev) => ({
+    setSheetWithHistory((prev) => ({
       ...prev,
       reductions: [...prev.reductions, { id: uid(), enabled: true, label: 'הפחתה נוספת (%)', percent: 0 }],
     }));
 
-  // Reset: restore the original head list and set all values to 0 (including reductions/defendants).
-  const reset = () => setSheet((prev) => ({ ...defaultSheet(), title: prev.title }));
+  const reset = () => setSheetWithHistory((prev) => ({ ...defaultSheet(), title: prev.title }));
 
   const exportJson = () => {
     const payload: Sheet = { ...sheet, updatedAt: new Date().toISOString() };
@@ -571,23 +626,83 @@ const DamagesCalculator: React.FC = () => {
   };
 
   const updateDefendant = (id: string, patch: Partial<DefendantShare>) => {
-    setSheet((prev) => ({
+    setSheetWithHistory((prev) => ({
       ...prev,
       defendants: prev.defendants.map((d) => (d.id === id ? { ...d, ...patch } : d)),
     }));
   };
 
   const removeDefendant = (id: string) =>
-    setSheet((prev) => ({ ...prev, defendants: prev.defendants.filter((d) => d.id !== id) }));
+    setSheetWithHistory((prev) => ({ ...prev, defendants: prev.defendants.filter((d) => d.id !== id) }));
 
   const addDefendant = () =>
-    setSheet((prev) => ({
+    setSheetWithHistory((prev) => ({
       ...prev,
       defendants: [...prev.defendants, { id: uid(), enabled: true, name: `נתבע ${prev.defendants.length + 1}`, percent: 0 }],
     }));
 
   const activeDefendants = useMemo(() => sheet.defendants.filter((d) => d.enabled), [sheet.defendants]);
   const defendantsPercentSum = useMemo(() => sum(activeDefendants.map((d) => d.percent)), [activeDefendants]);
+
+  const validationWarnings = useMemo(() => {
+    const w: string[] = [];
+    if (Math.abs(defendantsPercentSum - 100) > 0.01) {
+      w.push(`סכום אחוזי הנתבעים הוא ${defendantsPercentSum.toFixed(1)}% (מומלץ 100%).`);
+    }
+    const maxRow = Math.max(...sheet.rows.map((r) => Math.max(r.plaintiff, r.defendant)), 0);
+    if (maxRow > 50_000_000) {
+      w.push('קיים סכום חריג בשורה (מעל 50 מיליון ₪). וודא שהערכים נכונים.');
+    }
+    const totalNet = totals.plaintiffNet + totals.defendantNet;
+    if (totalNet > 100_000_000) {
+      w.push('סה״כ נטו חריג (מעל 100 מיליון ₪). וודא שהערכים נכונים.');
+    }
+    return w;
+  }, [defendantsPercentSum, sheet.rows, totals.plaintiffNet, totals.defendantNet]);
+
+  const applyTemplate = (t: TemplateItem) => {
+    const cloned = cloneSheetWithNewIds(t.sheet) as Sheet;
+    setSheet(cloned);
+    setTemplateLibraryOpen(false);
+  };
+
+  const handleSaveAsTemplate = () => {
+    const name = newTemplateName.trim() || sheet.title || 'תבנית חדשה';
+    const id = `saved-${Date.now()}`;
+    saveTemplate({
+      id,
+      name,
+      color: newTemplateColor,
+      sheet: { ...sheet, updatedAt: new Date().toISOString() },
+    });
+    setSavedTemplates(getSavedTemplates());
+    setSaveTemplateOpen(false);
+    setNewTemplateName('');
+  };
+
+  const exportDocx = () => {
+    exportDamagesToDocx(sheet, totals, after, attorneyFeeAndGross).catch((e) => {
+      alert(e?.message ?? 'ייצוא DOCX נכשל');
+    });
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'z') {
+          e.preventDefault();
+          if (e.shiftKey) redo();
+          else undo();
+        } else if (e.key === 'y') {
+          e.preventDefault();
+          redo();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [undo, redo]);
+
   const defendantAmounts = useMemo(() => {
     const calcFor = (baseAfterAll: number) => {
       return activeDefendants.map((d) => ({
@@ -612,6 +727,18 @@ const DamagesCalculator: React.FC = () => {
           <p className="text-xs text-slate-light">טבלה דינמית · תובע/נתבע/ממוצע · הפחתות באחוזים · שמירה מקומית</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={undo} disabled={past.length === 0} title="בטל (Ctrl+Z)">
+            <Undo2 className="w-4 h-4" />
+            בטל
+          </button>
+          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={redo} disabled={future.length === 0} title="בצע שוב">
+            <Redo2 className="w-4 h-4" />
+            בצע שוב
+          </button>
+          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={() => setTemplateLibraryOpen(true)}>
+            <LayoutTemplate className="w-4 h-4" />
+            תבניות
+          </button>
           <button type="button" className="btn-outline text-sm px-4 py-2" onClick={addRow}>
             <Plus className="w-4 h-4" />
             הוסף ראש נזק
@@ -635,6 +762,10 @@ const DamagesCalculator: React.FC = () => {
           <button type="button" className="btn-outline text-sm px-4 py-2" onClick={exportJson}>
             <Download className="w-4 h-4" />
             ייצוא JSON
+          </button>
+          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={exportDocx}>
+            <FileText className="w-4 h-4" />
+            ייצוא DOCX
           </button>
           <button type="button" className="btn-outline text-sm px-4 py-2" onClick={reset}>
             <RotateCcw className="w-4 h-4" />
@@ -663,6 +794,17 @@ const DamagesCalculator: React.FC = () => {
         </div>
       )}
 
+      {validationWarnings.length > 0 && (
+        <div className="rounded-card border border-amber-400 bg-amber-50 p-3 text-sm text-amber-900" role="alert">
+          <p className="font-semibold mb-1">אזהרות אימות</p>
+          <ul className="list-disc list-inside">
+            {validationWarnings.map((msg, i) => (
+              <li key={i}>{msg}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="card-shell">
         <div className="card-accent" />
         <div className="card-head">
@@ -675,7 +817,7 @@ const DamagesCalculator: React.FC = () => {
             <input
               className="rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
               value={sheet.title}
-              onChange={(e) => setSheet((prev) => ({ ...prev, title: e.target.value }))}
+              onChange={(e) => setSheetWithHistory((prev) => ({ ...prev, title: e.target.value }))}
               placeholder="לדוגמה: תיק פלוני"
             />
           </div>
@@ -694,7 +836,7 @@ const DamagesCalculator: React.FC = () => {
                 className="w-24 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
                 value={sheet.attorneyFeePercent}
                 onChange={(e) =>
-                  setSheet((prev) => ({ ...prev, attorneyFeePercent: clampPercent(safeNumber(e.target.value)) }))
+                  setSheetWithHistory((prev) => ({ ...prev, attorneyFeePercent: clampPercent(safeNumber(e.target.value)) }))
                 }
               />
             </label>
@@ -753,6 +895,7 @@ const DamagesCalculator: React.FC = () => {
                           className="w-64 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
                           value={r.name}
                           onChange={(e) => updateRow(r.id, { name: e.target.value })}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLElement).blur(); } if (e.key === 'Escape') (e.target as HTMLElement).blur(); }}
                         />
                       </td>
                       <td className="px-3 py-2 border-b border-pearl">
@@ -761,6 +904,7 @@ const DamagesCalculator: React.FC = () => {
                           className="w-44 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
                           value={r.plaintiff}
                           onChange={(e) => updateRow(r.id, { plaintiff: safeNumber(e.target.value) })}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLElement).blur(); } if (e.key === 'Escape') (e.target as HTMLElement).blur(); }}
                         />
                       </td>
                       <td className="px-3 py-2 border-b border-pearl">
@@ -769,6 +913,7 @@ const DamagesCalculator: React.FC = () => {
                           className="w-44 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
                           value={r.defendant}
                           onChange={(e) => updateRow(r.id, { defendant: safeNumber(e.target.value) })}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLElement).blur(); } if (e.key === 'Escape') (e.target as HTMLElement).blur(); }}
                         />
                       </td>
                       <td className="px-3 py-2 border-b border-pearl">
@@ -874,7 +1019,7 @@ const DamagesCalculator: React.FC = () => {
                     className="w-28 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
                     value={sheet.contributoryNegligencePercent}
                     onChange={(e) =>
-                      setSheet((prev) => ({ ...prev, contributoryNegligencePercent: clampPercent(safeNumber(e.target.value)) }))
+                      setSheetWithHistory((prev) => ({ ...prev, contributoryNegligencePercent: clampPercent(safeNumber(e.target.value)) }))
                     }
                   />
                   <span className="text-xs text-slate-light">%</span>
@@ -954,6 +1099,79 @@ const DamagesCalculator: React.FC = () => {
               </p>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="card-shell">
+        <div className="card-accent" />
+        <div className="card-head">
+          <div className="space-y-1">
+            <p className="text-sm font-semibold">תצוגה גרפית</p>
+            <p className="text-xs text-slate-light">חלוקת סכומים – תובע / נתבע / ממוצע, וחלוקה בין נתבעים</p>
+          </div>
+        </div>
+        <div className="card-underline" />
+        <div className="card-body space-y-4">
+          <div>
+            <p className="text-xs font-semibold text-slate-light mb-2">תרחישים (לאחר הפחתות)</p>
+            <div className="flex gap-4 items-end justify-end h-24" dir="ltr">
+              <div className="flex-1 flex flex-col items-center gap-1">
+                <div
+                  className="w-full bg-navy rounded-t min-h-[8px] transition-all"
+                  style={{ height: `${Math.min(100, (after.plaintiff.afterAll / (Math.max(after.plaintiff.afterAll, after.defendant.afterAll, after.avg.afterAll, 1) || 1)) * 100)}%` }}
+                  title={`תובע: ₪${formatILS(after.plaintiff.afterAll)}`}
+                />
+                <span className="text-[11px] text-slate">תובע</span>
+              </div>
+              <div className="flex-1 flex flex-col items-center gap-1">
+                <div
+                  className="w-full bg-slate-400 rounded-t min-h-[8px] transition-all"
+                  style={{ height: `${Math.min(100, (after.defendant.afterAll / (Math.max(after.plaintiff.afterAll, after.defendant.afterAll, after.avg.afterAll, 1) || 1)) * 100)}%` }}
+                  title={`נתבע: ₪${formatILS(after.defendant.afterAll)}`}
+                />
+                <span className="text-[11px] text-slate">נתבע</span>
+              </div>
+              <div className="flex-1 flex flex-col items-center gap-1">
+                <div
+                  className="w-full bg-gold rounded-t min-h-[8px] transition-all"
+                  style={{ height: `${Math.min(100, (after.avg.afterAll / (Math.max(after.plaintiff.afterAll, after.defendant.afterAll, after.avg.afterAll, 1) || 1)) * 100)}%` }}
+                  title={`ממוצע: ₪${formatILS(after.avg.afterAll)}`}
+                />
+                <span className="text-[11px] text-slate">ממוצע</span>
+              </div>
+            </div>
+          </div>
+          {activeDefendants.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-slate-light mb-2">חלוקה בין נתבעים (תרחיש ממוצע)</p>
+              <div className="flex h-8 rounded overflow-hidden border border-pearl" dir="ltr">
+                {activeDefendants.map((d, i) => {
+                  const pct = clampPercent(d.percent);
+                  const colors = ['#0f766e', '#0369a1', '#7c2d12', '#4c1d95', '#15803d'];
+                  const color = colors[i % colors.length];
+                  return (
+                    <div
+                      key={d.id}
+                      className="transition-all min-w-0"
+                      style={{ width: `${pct}%`, backgroundColor: color }}
+                      title={`${d.name}: ${pct}%`}
+                    />
+                  );
+                })}
+              </div>
+              <div className="flex flex-wrap gap-3 mt-1 justify-end">
+                {activeDefendants.map((d, i) => {
+                  const colors = ['#0f766e', '#0369a1', '#7c2d12', '#4c1d95', '#15803d'];
+                  return (
+                    <span key={d.id} className="text-[11px] text-slate flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: colors[i % colors.length] }} />
+                      {d.name} ({formatILS(d.percent)}%)
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1068,6 +1286,101 @@ const DamagesCalculator: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {templateLibraryOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="ספריית תבניות">
+          <div className="bg-white rounded-card shadow-card-xl border border-pearl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-pearl">
+              <h3 className="text-lg font-semibold text-navy">ספריית תבניות</h3>
+              <div className="flex gap-2">
+                <button type="button" className="btn-outline text-sm px-3 py-1.5" onClick={() => { setSaveTemplateOpen(true); setTemplateLibraryOpen(false); }}>
+                  שמור תבנית נוכחית
+                </button>
+                <button type="button" className="text-slate hover:text-navy" onClick={() => setTemplateLibraryOpen(false)} aria-label="סגור">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="overflow-auto p-5 space-y-6">
+              <div>
+                <p className="text-xs font-semibold text-slate-light mb-2">תבניות מובנות</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {getBuiltInTemplates().map((t) => (
+                    <button
+                      type="button"
+                      key={t.id}
+                      onClick={() => applyTemplate(t)}
+                      className="rounded-card border border-pearl bg-white p-4 text-right hover:shadow-card-xl transition flex items-center gap-3"
+                    >
+                      <span className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: t.color }} aria-hidden />
+                      <span className="font-semibold text-navy">{t.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-slate-light mb-2">התבניות שלי</p>
+                {savedTemplates.length === 0 ? (
+                  <p className="text-sm text-slate">אין תבניות שמורות. שמור את המחשבון הנוכחי כתבנית.</p>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {savedTemplates.map((t) => (
+                      <div key={t.id} className="rounded-card border border-pearl bg-white p-4 flex items-center justify-between gap-3">
+                        <button type="button" onClick={() => applyTemplate(t)} className="flex items-center gap-3 flex-1 min-w-0 text-right">
+                          <span className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: t.color }} aria-hidden />
+                          <span className="font-semibold text-navy truncate">{t.name}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-outline text-[11px] px-2 py-1 text-red-600 border-red-200"
+                          onClick={() => { deleteSavedTemplate(t.id); setSavedTemplates(getSavedTemplates()); }}
+                          aria-label="מחק תבנית"
+                        >
+                          מחק
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {saveTemplateOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="שמור כתבנית">
+          <div className="bg-white rounded-card shadow-card-xl border border-pearl max-w-md w-full p-5">
+            <h3 className="text-lg font-semibold text-navy mb-4">שמור תבנית</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-light mb-1">שם התבנית</label>
+                <input
+                  className="w-full rounded-card border border-pearl bg-white p-2 text-sm"
+                  value={newTemplateName}
+                  onChange={(e) => setNewTemplateName(e.target.value)}
+                  placeholder={sheet.title || 'תבנית חדשה'}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-light mb-1">צבע (לזיהוי ויזואלי)</label>
+                <div className="flex gap-2 items-center">
+                  <input type="color" className="w-10 h-10 rounded border border-pearl cursor-pointer" value={newTemplateColor} onChange={(e) => setNewTemplateColor(e.target.value)} />
+                  <span className="text-sm text-slate">{newTemplateColor}</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end mt-6">
+              <button type="button" className="btn-outline px-4 py-2" onClick={() => { setSaveTemplateOpen(false); setTemplateLibraryOpen(true); }}>
+                ביטול
+              </button>
+              <button type="button" className="btn-primary px-4 py-2" onClick={handleSaveAsTemplate}>
+                שמור
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
