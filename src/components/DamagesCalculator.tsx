@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Download, Plus, Trash2, Upload, RotateCcw, Undo2, Redo2, LayoutTemplate, FileText, X } from 'lucide-react';
+import { Download, Plus, Trash2, Upload, RotateCcw, Undo2, Redo2, LayoutTemplate, FileText, FileDown, X } from 'lucide-react';
 import { storageGetItem, storageSetItem } from '../utils/storageGuard';
 import { getBuiltInTemplates, getSavedTemplates, saveTemplate, deleteSavedTemplate, cloneSheetWithNewIds, type TemplateItem } from '../utils/damagesTemplates';
 import { exportDamagesToDocx } from '../utils/exportDamagesDocx';
+import ExportForWordModal from './ExportForWordModal';
+import type { ExportPayload } from '../utils/exportForWordHtml';
 
 type HeadRowKind = 'add' | 'deduct';
 
@@ -757,6 +759,26 @@ const DamagesCalculator: React.FC = () => {
     };
   }, [activeDefendants, after.avg.afterAll, after.defendant.afterAll, after.plaintiff.afterAll]);
 
+  const [exportForWordOpen, setExportForWordOpen] = useState(false);
+  const exportForWordPayload: ExportPayload = useMemo(
+    () => ({
+      sheet: {
+        title: sheet.title,
+        rows: sheet.rows,
+        contributoryNegligencePercent: sheet.contributoryNegligencePercent,
+        reductions: sheet.reductions,
+        defendants: sheet.defendants,
+        attorneyFeePercent: sheet.attorneyFeePercent,
+        plaintiffExpenses: sheet.plaintiffExpenses,
+      },
+      totals,
+      after,
+      attorneyFeeAndGross,
+      defendantAmounts,
+    }),
+    [sheet, totals, after, attorneyFeeAndGross, defendantAmounts]
+  );
+
   return (
     <div className="space-y-6" dir="rtl">
       <div className="rounded-card border border-pearl bg-white p-4 shadow-card-xl flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -804,6 +826,10 @@ const DamagesCalculator: React.FC = () => {
           <button type="button" className="btn-outline text-sm px-4 py-2" onClick={exportDocx}>
             <FileText className="w-4 h-4" />
             ייצוא DOCX
+          </button>
+          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={() => setExportForWordOpen(true)}>
+            <FileDown className="w-4 h-4" />
+            יצוא ל-Word
           </button>
           <button type="button" className="btn-outline text-sm px-4 py-2" onClick={reset}>
             <RotateCcw className="w-4 h-4" />
@@ -1342,6 +1368,13 @@ const DamagesCalculator: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {exportForWordOpen && (
+        <ExportForWordModal
+          payload={exportForWordPayload}
+          onClose={() => setExportForWordOpen(false)}
+        />
+      )}
 
       {templateLibraryOpen && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="ספריית תבניות">
