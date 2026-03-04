@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { requireAuth } from '../middleware/auth';
@@ -7,6 +8,22 @@ import { generateSearchQueries } from '../services/openAIClient';
 
 const router = Router();
 router.use(requireAuth);
+
+const ASSISTANT_WINDOW_MS = 60 * 1000;
+const ASSISTANT_MAX_PER_WINDOW = 10;
+const assistantSearchLimiter = rateLimit({
+  windowMs: ASSISTANT_WINDOW_MS,
+  max: ASSISTANT_MAX_PER_WINDOW,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.user?.id ?? req.ip ?? 'anonymous'),
+  handler: (req, res) => {
+    const retryAfterSeconds = Math.ceil(ASSISTANT_WINDOW_MS / 1000);
+    res.setHeader('Retry-After', String(retryAfterSeconds));
+    res.status(429).json({ error: 'rate_limited', retryAfterSeconds });
+    console.warn('[rate-limit] assistant/search 429', { key: (req as any).user?.id ?? req.ip });
+  },
+});
 
 const buildPublicBaseUrl = (req: any): string => `${req.protocol}://${req.get('host')}`;
 const buildAttachmentDownloadUrl = (req: any, id: string): string =>
@@ -110,7 +127,7 @@ const searchDocumentsByQuery = async (
   }));
 };
 
-router.post('/search', async (req, res) => {
+router.post('/search', assistantSearchLimiter, async (req, res) => {
   const parsed = bodySchema.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: 'invalid_body', details: parsed.error.errors });

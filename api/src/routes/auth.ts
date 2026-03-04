@@ -8,16 +8,37 @@ import { ensureUserRecord } from '../services/prisma';
 import { config } from '../services/env';
 
 const router = Router();
+router.use(generalAuthLimiter);
 const COOKIE_NAME = 'lm_access_token';
 
+const AUTH_LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const AUTH_LOGIN_RETRY_SECONDS = Math.ceil(AUTH_LOGIN_WINDOW_MS / 1000);
 // Rate limiting for login - prevent brute force attacks
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 attempts per window
+  windowMs: AUTH_LOGIN_WINDOW_MS,
+  max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'too_many_login_attempts', message: 'יותר מדי ניסיונות התחברות. נא לנסות שוב בעוד 15 דקות.' },
-  skipSuccessfulRequests: true, // Don't count successful logins
+  skipSuccessfulRequests: true,
+  handler: (req, res) => {
+    res.setHeader('Retry-After', String(AUTH_LOGIN_RETRY_SECONDS));
+    res.status(429).json({ error: 'rate_limited', retryAfterSeconds: AUTH_LOGIN_RETRY_SECONDS });
+    console.warn('[rate-limit] auth/login 429', { ip: req.ip });
+  },
+});
+
+// General auth routes (e.g. /me, /logout): 10 per minute per IP
+const generalAuthLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    const retryAfterSeconds = 60;
+    res.setHeader('Retry-After', String(retryAfterSeconds));
+    res.status(429).json({ error: 'rate_limited', retryAfterSeconds });
+    console.warn('[rate-limit] auth 429', { ip: req.ip });
+  },
 });
 
 // Sanitize string inputs - remove control characters and trim

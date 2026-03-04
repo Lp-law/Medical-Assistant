@@ -6,6 +6,7 @@ import { openAttachment } from '../utils/openAttachment';
 type Props = {
   mode?: 'documents' | 'calculator';
   onOpenDocumentsWithQuery?: (query: string, categoryName?: string) => void;
+  onReLogin?: () => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 };
@@ -70,7 +71,31 @@ type ChatTurn =
       limit: number;
     };
 
-const BotAssistantWidget: React.FC<Props> = ({ mode = 'documents', onOpenDocumentsWithQuery, open: controlledOpen, onOpenChange }) => {
+type AssistantErrorType = 'session_expired' | 'rate_limited' | 'server_error' | 'network_error' | 'timeout' | 'unknown';
+const getAssistantErrorInfo = (e: unknown): { type: AssistantErrorType; message: string; retryAfterSeconds?: number } => {
+  const err = e as { status?: number; message?: string; retryAfterSeconds?: number };
+  const status = err?.status;
+  const msg = (err?.message ?? '').toString();
+  if (status === 401 || status === 403) {
+    return { type: 'session_expired', message: 'ההתחברות פגה. נא להתחבר מחדש.' };
+  }
+  if (status === 429 || msg === 'rate_limited') {
+    const sec = err?.retryAfterSeconds ?? 60;
+    return { type: 'rate_limited', message: `יותר מדי בקשות. נא לנסות שוב בעוד ${sec} שניות.`, retryAfterSeconds: sec };
+  }
+  if (status === 408 || msg === 'timeout') {
+    return { type: 'timeout', message: 'הבקשה ארכה יותר מדי. נא לנסות שוב.' };
+  }
+  if (status && status >= 500) {
+    return { type: 'server_error', message: 'שגיאה בשרת. נא לנסות שוב.' };
+  }
+  if (msg === 'Failed to fetch' || msg.includes('NetworkError') || msg.includes('network')) {
+    return { type: 'network_error', message: 'בעיית רשת. וודא את החיבור ונסה שוב.' };
+  }
+  return { type: 'unknown', message: msg || 'החיפוש נכשל. נא לנסות שוב.' };
+};
+
+const BotAssistantWidget: React.FC<Props> = ({ mode = 'documents', onOpenDocumentsWithQuery, onReLogin, open: controlledOpen, onOpenChange }) => {
   const [internalOpen, setInternalOpen] = useState(false);
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
@@ -117,10 +142,19 @@ const BotAssistantWidget: React.FC<Props> = ({ mode = 'documents', onOpenDocumen
       };
       setHistory((prev) => [...prev, assistantTurn]);
       setQuestion('');
-    } catch (e: any) {
-      setError(e?.message ?? 'assistant_failed');
+    } catch (e: unknown) {
+      const info = getAssistantErrorInfo(e);
+      setError(info.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRetry = () => {
+    setError(null);
+    const lastUser = [...history].reverse().find((t) => t.role === 'user');
+    if (lastUser && lastUser.role === 'user') {
+      ask({ question: lastUser.text });
     }
   };
 
@@ -272,7 +306,29 @@ const BotAssistantWidget: React.FC<Props> = ({ mode = 'documents', onOpenDocumen
                 </button>
               </div>
 
-              {error && <div className="text-danger text-sm font-semibold">{error}</div>}
+              {error && (
+                <div className="rounded-card border border-amber-400 bg-amber-50 p-3 text-sm text-amber-900" role="alert">
+                  <p className="font-semibold">{error}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleRetry}
+                      className="rounded-full bg-navy text-gold px-4 py-2 text-xs font-semibold hover:bg-navy/90 transition"
+                    >
+                      נסה שוב
+                    </button>
+                    {(error.includes('התחברות') || error.includes('פגה')) && (
+                      <button
+                        type="button"
+                        onClick={() => { setError(null); onReLogin?.(); setOpen(false); }}
+                        className="rounded-full border border-navy text-navy px-4 py-2 text-xs font-semibold hover:bg-navy/5 transition"
+                      >
+                        התחבר מחדש
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {history.length > 0 && (
                 <div className="space-y-3">

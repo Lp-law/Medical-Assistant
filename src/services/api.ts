@@ -26,16 +26,37 @@ const withAuth = (init?: RequestInit): RequestInit => {
   };
 };
 
+export type ApiError = Error & { status?: number; retryAfterSeconds?: number };
+
 const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(`${API_BASE_URL}${path}`, withAuth(init));
   if (response.status === 401 || response.status === 403) {
     if (onUnauthorized) onUnauthorized();
     const errorText = await response.text().catch(() => '');
-    throw new Error(errorText || 'session_expired');
+    const err = new Error(errorText || 'session_expired') as ApiError;
+    err.status = response.status;
+    throw err;
   }
   if (!response.ok) {
-    const errorText = await response.text().catch(() => '');
-    throw new Error(errorText || 'request_failed');
+    const text = await response.text().catch(() => '');
+    let body: { error?: string; message?: string; retryAfterSeconds?: number } = {};
+    try {
+      if (text) body = JSON.parse(text);
+    } catch {
+      // ignore
+    }
+    const message =
+      response.status === 429
+        ? 'rate_limited'
+        : response.status >= 500
+          ? 'server_error'
+          : body.error ?? body.message ?? text ?? 'request_failed';
+    const err = new Error(message) as ApiError;
+    err.status = response.status;
+    if (response.status === 429 && body.retryAfterSeconds != null) {
+      err.retryAfterSeconds = body.retryAfterSeconds;
+    }
+    throw err;
   }
   if (response.status === 204) {
     return undefined as T;

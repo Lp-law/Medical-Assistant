@@ -117,6 +117,44 @@ const calcAvg = (p: number, d: number): number => (safeNumber(p) + safeNumber(d)
 
 const sum = (values: number[]): number => values.reduce((acc, v) => acc + safeNumber(v), 0);
 
+/** Sum of percent of enabled defendants. */
+const sumDefendantsPercent = (defendants: DefendantShare[]): number =>
+  sum(defendants.filter((d) => d.enabled).map((d) => d.percent));
+
+/**
+ * Normalize defendant percents so enabled ones sum to 100%.
+ * Proportional scaling; rounds to 2 decimals and adjusts last to fix rounding.
+ */
+const normalizeDefendants = (defendants: DefendantShare[]): DefendantShare[] => {
+  const enabled = defendants.filter((d) => d.enabled);
+  const total = sum(enabled.map((d) => d.percent));
+  if (enabled.length === 0) return defendants;
+  if (total <= 0) {
+    let first = true;
+    return defendants.map((d) => {
+      if (!d.enabled) return d;
+      const p = first ? 100 : 0;
+      first = false;
+      return { ...d, percent: p };
+    });
+  }
+  const scale = 100 / total;
+  const updated = new Map<string, number>();
+  let firstEnabledId: string | null = null;
+  let running = 0;
+  enabled.forEach((d) => {
+    const p = Math.round(clampPercent(d.percent) * scale * 100) / 100;
+    updated.set(d.id, p);
+    running += p;
+    if (firstEnabledId === null) firstEnabledId = d.id;
+  });
+  const diff = 100 - running;
+  if (firstEnabledId != null && Math.abs(diff) > 0.001) {
+    updated.set(firstEnabledId, clampPercent((updated.get(firstEnabledId) ?? 0) + diff));
+  }
+  return defendants.map((d) => (d.enabled && updated.has(d.id) ? { ...d, percent: updated.get(d.id)! } : d));
+};
+
 const applyContribAndReductions = (
   base: number,
   contributoryNegligencePercent: number,
@@ -849,7 +887,7 @@ const DamagesCalculator: React.FC = () => {
                 className="w-32 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
                 value={sheet.plaintiffExpenses || ''}
                 onChange={(e) =>
-                  setSheet((prev) => ({ ...prev, plaintiffExpenses: Math.max(0, safeNumber(e.target.value)) }))
+                  setSheetWithHistory((prev) => ({ ...prev, plaintiffExpenses: Math.max(0, safeNumber(e.target.value)) }))
                 }
               />
             </label>
@@ -1184,12 +1222,30 @@ const DamagesCalculator: React.FC = () => {
               לאחר כל ההפחתות, הסכום מתחלק לפי אחוז לכל נתבע. מומלץ שסכום האחוזים יהיה 100%.
             </p>
           </div>
-          <span className={defendantsPercentSum === 100 ? 'badge-info' : 'badge-warning'}>
-            סה״כ אחוזים: {formatILS(defendantsPercentSum)}%
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={Math.abs(defendantsPercentSum - 100) <= 0.01 ? 'badge-info' : 'badge-warning'}>
+              סה״כ אחוזים: {defendantsPercentSum.toFixed(1)}%
+            </span>
+            {Math.abs(defendantsPercentSum - 100) > 0.01 && activeDefendants.length > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  setSheetWithHistory((prev) => ({ ...prev, defendants: normalizeDefendants(prev.defendants) }))
+                }
+                className="btn-outline text-xs px-3 py-1.5"
+              >
+                נרמל ל-100%
+              </button>
+            )}
+          </div>
         </div>
         <div className="card-underline" />
         <div className="card-body space-y-4">
+          {Math.abs(defendantsPercentSum - 100) > 0.01 && activeDefendants.length > 0 && (
+            <div className="rounded-card border border-amber-400 bg-amber-50 p-3 text-sm text-amber-900" role="alert">
+              <p className="font-semibold">סכום אחוזי הנתבעים אינו 100% (כרגיל {defendantsPercentSum.toFixed(1)}%). לחץ &quot;נרמל ל-100%&quot; כדי לחלק מחדש באופן יחסי.</p>
+            </div>
+          )}
           <div className="overflow-auto">
             <table className="min-w-[760px] w-full text-sm border-separate border-spacing-0">
               <thead>
