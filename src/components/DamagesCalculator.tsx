@@ -34,6 +34,8 @@ type Sheet = {
   contributoryNegligencePercent: number; // אשם תורם (%), applied first
   reductions: Reduction[]; // applied after contributory negligence (multiplicative)
   defendants: DefendantShare[]; // allocation after all reductions
+  attorneyFeePercent: number; // אחוז שכ"ט ב"כ התובע (0–100), מחושב מסה"כ נטו
+  plaintiffExpenses: number; // הוצאות תובע (₪)
   updatedAt: string;
 };
 
@@ -104,6 +106,8 @@ const defaultSheet = (): Sheet => ({
   contributoryNegligencePercent: 0,
   reductions: DEFAULT_REDUCTIONS,
   defendants: DEFAULT_DEFENDANTS,
+  attorneyFeePercent: 0,
+  plaintiffExpenses: 0,
   updatedAt: new Date().toISOString(),
 });
 
@@ -167,6 +171,8 @@ const DamagesCalculator: React.FC = () => {
                 percent: clampPercent(safeNumber(d.percent)),
               }))
             : DEFAULT_DEFENDANTS,
+          attorneyFeePercent: clampPercent(safeNumber((parsed as any).attorneyFeePercent)),
+          plaintiffExpenses: safeNumber((parsed as any).plaintiffExpenses),
           updatedAt: String(parsed.updatedAt ?? new Date().toISOString()),
         };
       }
@@ -204,6 +210,8 @@ const DamagesCalculator: React.FC = () => {
                 percent: clampPercent(safeNumber(d.percent)),
               }))
             : DEFAULT_DEFENDANTS,
+          attorneyFeePercent: clampPercent(safeNumber((parsed as any).attorneyFeePercent)),
+          plaintiffExpenses: safeNumber((parsed as any).plaintiffExpenses),
           updatedAt: String(parsed.updatedAt ?? new Date().toISOString()),
         };
       }
@@ -233,6 +241,8 @@ const DamagesCalculator: React.FC = () => {
             { id: uid(), enabled: true, label: 'פגיעה בסיכויי החלמה (%)', percent: clampPercent(safeNumber(lossChance)) },
           ],
           defendants: DEFAULT_DEFENDANTS,
+          attorneyFeePercent: 0,
+          plaintiffExpenses: 0,
           updatedAt: new Date().toISOString(),
         };
       }
@@ -251,7 +261,7 @@ const DamagesCalculator: React.FC = () => {
       // ignore
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sheet.title, sheet.rows, sheet.contributoryNegligencePercent, sheet.reductions, sheet.defendants]);
+  }, [sheet.title, sheet.rows, sheet.contributoryNegligencePercent, sheet.reductions, sheet.defendants, sheet.attorneyFeePercent, sheet.plaintiffExpenses]);
 
   const activeRows = useMemo(() => sheet.rows.filter((r) => r.enabled), [sheet.rows]);
 
@@ -291,6 +301,22 @@ const DamagesCalculator: React.FC = () => {
     const avg = applyContribAndReductions(totals.avgNet, sheet.contributoryNegligencePercent, sheet.reductions);
     return { plaintiff, defendant, avg };
   }, [sheet.contributoryNegligencePercent, sheet.reductions, totals.avgNet, totals.defendantNet, totals.plaintiffNet]);
+
+  const attorneyFeeAndGross = useMemo(() => {
+    const pct = clampPercent(sheet.attorneyFeePercent) / 100;
+    const attorneyFeePlaintiff = totals.plaintiffNet * pct;
+    const attorneyFeeAvg = totals.avgNet * pct;
+    const expenses = safeNumber(sheet.plaintiffExpenses);
+    return {
+      attorneyFeePlaintiff,
+      attorneyFeeDefendant: 0,
+      attorneyFeeAvg,
+      plaintiffExpenses: expenses,
+      grossPlaintiff: totals.plaintiffNet + attorneyFeePlaintiff + expenses,
+      grossDefendant: totals.defendantNet,
+      grossAvg: totals.avgNet + attorneyFeeAvg + expenses,
+    };
+  }, [sheet.attorneyFeePercent, sheet.plaintiffExpenses, totals.plaintiffNet, totals.defendantNet, totals.avgNet]);
 
   const updateRow = (id: string, patch: Partial<HeadRow>) => {
     setSheet((prev) => ({
@@ -363,6 +389,12 @@ const DamagesCalculator: React.FC = () => {
     lines.push([quote('סה״כ ראשי נזק'), quote(totals.plaintiffAdd), quote(totals.defendantAdd), quote(totals.avgAdd)].join(','));
     lines.push([quote('קיזוזים (למשל מל״ל)'), quote(totals.plaintiffDeduct), quote(totals.defendantDeduct), quote(totals.avgDeduct)].join(','));
     lines.push([quote('סה״כ נטו'), quote(totals.plaintiffNet), quote(totals.defendantNet), quote(totals.avgNet)].join(','));
+    lines.push([quote('שכ״ט ב״כ התובע'), quote(attorneyFeeAndGross.attorneyFeePlaintiff), quote(attorneyFeeAndGross.attorneyFeeDefendant), quote(attorneyFeeAndGross.attorneyFeeAvg)].join(','));
+    lines.push([quote('הוצאות תובע'), quote(attorneyFeeAndGross.plaintiffExpenses), quote(0), quote(attorneyFeeAndGross.plaintiffExpenses)].join(','));
+    lines.push([quote('סה״כ ברוטו'), quote(attorneyFeeAndGross.grossPlaintiff), quote(attorneyFeeAndGross.grossDefendant), quote(attorneyFeeAndGross.grossAvg)].join(','));
+    lines.push('');
+    lines.push([quote('אחוז שכ״ט (%)'), quote(sheet.attorneyFeePercent)].join(','));
+    lines.push([quote('הוצאות תובע (₪)'), quote(sheet.plaintiffExpenses)].join(','));
     lines.push('');
     lines.push([quote('אשם תורם (%)'), quote(sheet.contributoryNegligencePercent)].join(','));
     for (const r of sheet.reductions) {
@@ -425,6 +457,8 @@ const DamagesCalculator: React.FC = () => {
               percent: clampPercent(safeNumber(d.percent)),
             }))
           : DEFAULT_DEFENDANTS,
+        attorneyFeePercent: clampPercent(safeNumber((parsed as any).attorneyFeePercent)),
+        plaintiffExpenses: safeNumber((parsed as any).plaintiffExpenses),
         updatedAt: new Date().toISOString(),
       });
       return;
@@ -461,6 +495,8 @@ const DamagesCalculator: React.FC = () => {
               percent: clampPercent(safeNumber(d.percent)),
             }))
           : DEFAULT_DEFENDANTS,
+        attorneyFeePercent: clampPercent(safeNumber((parsed as any).attorneyFeePercent)),
+        plaintiffExpenses: safeNumber((parsed as any).plaintiffExpenses),
         updatedAt: new Date().toISOString(),
       });
       return;
@@ -489,6 +525,8 @@ const DamagesCalculator: React.FC = () => {
           { id: uid(), enabled: true, label: 'פגיעה בסיכויי החלמה (%)', percent: clampPercent(safeNumber(lossChance)) },
         ],
         defendants: DEFAULT_DEFENDANTS,
+        attorneyFeePercent: 0,
+        plaintiffExpenses: 0,
         updatedAt: new Date().toISOString(),
       });
       return;
@@ -602,7 +640,36 @@ const DamagesCalculator: React.FC = () => {
         </div>
         <div className="card-underline" />
 
-        <div className="card-body">
+        <div className="card-body space-y-3">
+          <div className="flex flex-wrap items-center gap-4 rounded-card border border-pearl bg-pearl/30 p-3">
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-slate-light">אחוז שכ״ט ב״כ התובע (%)</span>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={0.1}
+                className="w-24 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                value={sheet.attorneyFeePercent}
+                onChange={(e) =>
+                  setSheet((prev) => ({ ...prev, attorneyFeePercent: clampPercent(safeNumber(e.target.value)) }))
+                }
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-slate-light">הוצאות תובע (₪)</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                className="w-32 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                value={sheet.plaintiffExpenses || ''}
+                onChange={(e) =>
+                  setSheet((prev) => ({ ...prev, plaintiffExpenses: Math.max(0, safeNumber(e.target.value)) }))
+                }
+              />
+            </label>
+          </div>
           <div className="overflow-auto">
             <table className="min-w-[920px] w-full text-sm border-separate border-spacing-0">
               <thead>
@@ -707,6 +774,31 @@ const DamagesCalculator: React.FC = () => {
                   <td className="px-3 py-3 font-semibold">{formatILS(totals.plaintiffNet)}</td>
                   <td className="px-3 py-3 font-semibold">{formatILS(totals.defendantNet)}</td>
                   <td className="px-3 py-3 font-semibold">{formatILS(totals.avgNet)}</td>
+                  <td className="px-3 py-3" />
+                </tr>
+                <tr className="bg-pearl/30">
+                  <td className="px-3 py-3" colSpan={3} />
+                  <td className="px-3 py-3 font-semibold text-slate">שכ״ט ב״כ התובע</td>
+                  <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.attorneyFeePlaintiff)}</td>
+                  <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.attorneyFeeDefendant)}</td>
+                  <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.attorneyFeeAvg)}</td>
+                  <td className="px-3 py-3" />
+                </tr>
+                <tr className="bg-pearl/30">
+                  <td className="px-3 py-3" colSpan={3} />
+                  <td className="px-3 py-3 font-semibold text-slate">הוצאות תובע</td>
+                  <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.plaintiffExpenses)}</td>
+                  <td className="px-3 py-3 font-semibold text-slate">—</td>
+                  <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.plaintiffExpenses)}</td>
+                  <td className="px-3 py-3" />
+                </tr>
+                <tr>
+                  <td className="px-3 py-3" />
+                  <td className="px-3 py-3" />
+                  <td className="px-3 py-3 font-bold bg-gold/20">סה״כ ברוטו</td>
+                  <td className="px-3 py-3 font-bold bg-gold/20">{formatILS(attorneyFeeAndGross.grossPlaintiff)}</td>
+                  <td className="px-3 py-3 font-bold bg-gold/20">{formatILS(attorneyFeeAndGross.grossDefendant)}</td>
+                  <td className="px-3 py-3 font-bold bg-gold/20">{formatILS(attorneyFeeAndGross.grossAvg)}</td>
                   <td className="px-3 py-3" />
                 </tr>
               </tfoot>
