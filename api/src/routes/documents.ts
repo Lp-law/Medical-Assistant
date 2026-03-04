@@ -35,10 +35,9 @@ const DOC_TYPES = ['פסק דין', 'חוות דעת', 'תחשיב נזק', 'ס�
 const manualUploadSchema = z.object({
   title: z
     .string()
-    .min(2)
     .max(240)
-    .transform(sanitizeString)
-    .pipe(z.string().min(2).max(240)),
+    .optional()
+    .transform((val) => (val ? sanitizeString(val) : undefined)),
   docType: z.enum(DOC_TYPES),
   categoryId: z.string().min(1).optional(),
   categoryName: z
@@ -203,7 +202,10 @@ documentsRouter.post('/upload', upload.single('file'), async (req, res) => {
     return;
   }
 
-  const { title, docType, field, expertName, articleAuthor, articleTitle, bookAuthor, bookName, bookChapter, notes, summary } = parsed.data;
+  const { docType, field, expertName, articleAuthor, articleTitle, bookAuthor, bookName, bookChapter, notes, summary } = parsed.data;
+  const titleFromBody = parsed.data.title?.trim();
+  const titleFromFile = (req.file.originalname || 'document').replace(/\.(pdf|docx)$/i, '').trim() || 'מסמך';
+  const title = (titleFromBody && titleFromBody.length >= 2) ? titleFromBody.slice(0, 240) : titleFromFile.slice(0, 240);
   const attachmentUrl = await uploadFileToStorage(req.file.buffer, req.file.originalname, req.file.mimetype);
 
   // Ensure attachmentUrl is always set if we have a valid file

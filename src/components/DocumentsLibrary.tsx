@@ -59,7 +59,6 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
   const [openingAttachmentId, setOpeningAttachmentId] = useState<string | null>(null);
 
   // Upload state
-  const [uploadTitle, setUploadTitle] = useState('');
   const [uploadDocType, setUploadDocType] = useState<DocumentTypeKey>('פסק דין');
   const [uploadCategoryId, setUploadCategoryId] = useState<string>('');
   const [uploadField, setUploadField] = useState('');
@@ -241,8 +240,8 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
   };
 
   const submitUpload = async () => {
-    if (!uploadTitle.trim() || !uploadFile) {
-      setUploadError('חובה למלא שם מסמך ולבחור קובץ (PDF או Word).');
+    if (!uploadFile) {
+      setUploadError('חובה לבחור קובץ (PDF או Word).');
       return;
     }
     const ext = (uploadFile.name ?? '').toLowerCase().split('.').pop();
@@ -250,12 +249,13 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
       setUploadError('ניתן להעלות רק קבצי PDF או Word (DOCX).');
       return;
     }
+    const titleFromFile = (uploadFile.name || 'document').replace(/\.(pdf|docx)$/i, '').trim() || 'מסמך';
     setUploadLoading(true);
     setUploadError(null);
     setUploadSuccess(null);
     try {
       const doc = await uploadDocument({
-        title: uploadTitle.trim(),
+        title: titleFromFile,
         docType: uploadDocType,
         categoryId: uploadCategoryId || undefined,
         field: uploadField.trim() || undefined,
@@ -270,7 +270,6 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
         file: uploadFile,
       });
       setUploadSuccess(`המסמך "${doc.title}" נשמר בהצלחה.`);
-      setUploadTitle('');
       setUploadField('');
       setUploadExpertName('');
       setUploadArticleAuthor('');
@@ -531,30 +530,19 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
         </div>
         <div className="card-underline" />
         <div className="card-body space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="text-xs font-semibold text-slate-light">שם המסמך *</label>
-              <input
-                className="mt-1 w-full rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
-                value={uploadTitle}
-                onChange={(e) => setUploadTitle(e.target.value)}
-                placeholder="לדוגמה: פלוני נ׳ אלמוני (מחוזי ת״א, 2022)"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-light">סוג *</label>
-              <select
-                className="mt-1 w-full rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
-                value={uploadDocType}
-                onChange={(e) => setUploadDocType(e.target.value as DocumentTypeKey)}
-              >
-                {DOC_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-light">סוג *</label>
+            <select
+              className="mt-1 w-full rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+              value={uploadDocType}
+              onChange={(e) => setUploadDocType(e.target.value as DocumentTypeKey)}
+            >
+              {DOC_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
