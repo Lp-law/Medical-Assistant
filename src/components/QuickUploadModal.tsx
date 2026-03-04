@@ -41,7 +41,11 @@ const QuickUploadModal: React.FC<Props> = ({ isOpen, categoryName, onClose, onUp
       setFile(null);
       onUploaded?.();
     } catch (e: any) {
-      setError(e?.message ?? 'upload_failed');
+      const msg = e?.message ?? '';
+      if (msg.includes('413') || /payload|גדול|large/i.test(msg)) setError('הקובץ גדול מדי. נא להעלות קובץ קטן יותר.');
+      else if (msg.includes('401') || msg.includes('403') || /session|התחברות/i.test(msg)) setError('פג תוקף ההתחברות. נא להתחבר מחדש.');
+      else if (msg) setError(msg);
+      else setError('העלאה נכשלה');
     } finally {
       setLoading(false);
     }

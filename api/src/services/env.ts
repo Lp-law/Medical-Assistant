@@ -51,14 +51,18 @@ const envSchema = z.object({
 const env = envSchema.parse(process.env);
 
 const parseAuthUsers = (raw?: string): AuthUserEnv[] => {
-  if (!raw) {
+  if (!raw || !raw.trim()) {
     return [];
   }
   try {
     const parsed = JSON.parse(raw) as AuthUserEnv[];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) {
+      console.error('[env] AUTH_USERS must be a JSON array. Got non-array. No users will be available.');
+      return [];
+    }
+    return parsed;
   } catch (error) {
-    console.warn('[env] Failed to parse AUTH_USERS. Provide valid JSON array.', error);
+    console.error('[env] Failed to parse AUTH_USERS. Provide valid JSON array. No users will be available.', error);
     return [];
   }
 };

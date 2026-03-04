@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, UploadCloud, FileText, AlertTriangle, Trash2 } from 'lucide-react';
+import { Search, UploadCloud, FileText, AlertTriangle, Trash2, Loader2 } from 'lucide-react';
 import { CategoryRecord, DocumentRecord, DocumentTypeKey } from '../types';
 import {
   createCategory,
@@ -29,6 +29,10 @@ const formatDate = (value?: string | null): string => {
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString('he-IL');
 };
+
+/** Max file size for upload (MB). Server allows up to 500MB; lower limit improves UX. */
+const MAX_UPLOAD_FILE_MB = 100;
+const MAX_UPLOAD_FILE_BYTES = MAX_UPLOAD_FILE_MB * 1024 * 1024;
 
 type Props = {
   initialQuery?: string;
@@ -72,6 +76,7 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
   const [uploadSummary, setUploadSummary] = useState('');
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadLoading, setUploadLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [fieldSuggestions, setFieldSuggestions] = useState<string[]>([]);
@@ -118,21 +123,20 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const hasSyncedInitialCategory = useRef(false);
   useEffect(() => {
     const name = (initialCategoryName ?? '').trim();
-    if (!name) return;
-    if (!categories.length) return;
+    if (!name || !categories.length || hasSyncedInitialCategory.current) return;
     const match = categories.find((c) => c.name === name);
-    if (match && !categoryId) {
+    if (match) {
       setCategoryId(match.id);
+      hasSyncedInitialCategory.current = true;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialCategoryName, categories]);
 
   useEffect(() => {
     if (!initialTab) return;
     setActiveTab(initialTab);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTab]);
 
   const canSearch = useMemo(() => Boolean(q.trim() || categoryId || from || to), [q, categoryId, from, to]);
@@ -159,6 +163,9 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
     }
   };
 
+  const runSearchRef = useRef(runSearch);
+  runSearchRef.current = runSearch;
+
   useEffect(() => {
     if (!autoSearchOnMount) return;
     const nextQ = (initialQuery ?? '').trim();
@@ -174,9 +181,7 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
     setQ(nextQ);
     if (nextCategoryId) setCategoryId(nextCategoryId);
 
-    // Run immediately with overrides to avoid state timing issues.
-    runSearch({ q: nextQ, categoryId: nextCategoryId });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    runSearchRef.current({ q: nextQ, categoryId: nextCategoryId });
   }, [autoSearchOnMount, initialQuery, initialCategoryName, initialTab, categories]);
 
   const QUICK_CATEGORY_LABELS = useMemo(
@@ -249,8 +254,13 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
       setUploadError('ניתן להעלות רק קבצי PDF או Word (DOCX).');
       return;
     }
+    if (uploadFile.size > MAX_UPLOAD_FILE_BYTES) {
+      setUploadError(`גודל הקובץ חורג מהמותר (עד ${MAX_UPLOAD_FILE_MB} MB).`);
+      return;
+    }
     const titleFromFile = (uploadFile.name || 'document').replace(/\.(pdf|docx)$/i, '').trim() || 'מסמך';
     setUploadLoading(true);
+    setUploadProgress(0);
     setUploadError(null);
     setUploadSuccess(null);
     try {
@@ -268,6 +278,7 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
         notes: uploadNotes.trim() || undefined,
         summary: uploadSummary.trim() || undefined,
         file: uploadFile,
+        onProgress: setUploadProgress,
       });
       setUploadSuccess(`המסמך "${doc.title}" נשמר בהצלחה.`);
       setUploadField('');
@@ -400,8 +411,9 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
               className="btn-primary px-5"
               onClick={() => runSearch()}
               disabled={!canSearch || searchLoading}
+              aria-busy={searchLoading}
             >
-              <Search className="w-4 h-4" />
+              {searchLoading ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Search className="w-4 h-4" aria-hidden="true" />}
               {searchLoading ? 'מחפש...' : 'חפש'}
             </button>
           </div>
@@ -478,19 +490,21 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
                     </div>
                   )}
                   <div className="flex flex-wrap gap-2 text-xs">
-                    {doc.attachmentUrl && (
-                      <button
-                        type="button"
-                        className="btn-outline text-[11px] px-4 py-1.5"
-                        onClick={async () => {
-                          setOpeningAttachmentId(doc.id);
-                          try {
-                            await openAttachment(doc.attachmentUrl as string, doc.title);
-                          } finally {
-                            setOpeningAttachmentId((prev) => (prev === doc.id ? null : prev));
-                          }
-                        }}
-                      >
+                                    {doc.attachmentUrl && (
+                                      <button
+                                        type="button"
+                                        className="btn-outline text-[11px] px-4 py-1.5"
+                                        onClick={async () => {
+                                          const url = doc.attachmentUrl;
+                                          if (!url) return;
+                                          setOpeningAttachmentId(doc.id);
+                                          try {
+                                            await openAttachment(url, doc.title);
+                                          } finally {
+                                            setOpeningAttachmentId((prev) => (prev === doc.id ? null : prev));
+                                          }
+                                        }}
+                                      >
                         {openingAttachmentId === doc.id ? 'פותח…' : 'פתח קובץ'}
                       </button>
                     )}
@@ -525,7 +539,7 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
         <div className="card-head">
           <div>
             <p className="text-sm font-semibold">העלאת מסמך</p>
-            <p className="text-xs text-slate-light">רק קבצי PDF ו-Word (DOCX). גרור קובץ או בחר מהמחשב. מלא סוג, תחום ופרטים לפי סוג המסמך.</p>
+            <p className="text-xs text-slate-light">רק קבצי PDF ו-Word (DOCX), עד {MAX_UPLOAD_FILE_MB} MB. גרור קובץ או בחר מהמחשב. מלא סוג, תחום ופרטים לפי סוג המסמך.</p>
           </div>
         </div>
         <div className="card-underline" />
@@ -635,25 +649,31 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
           )}
 
           <div>
-            <label className="text-xs font-semibold text-slate-light">הערות (אופציונלי)</label>
+            <label className="text-xs font-semibold text-slate-light">הערות (אופציונלי, עד 2,000 תווים)</label>
             <textarea
               className="mt-1 w-full rounded-card border border-pearl bg-white p-3 text-sm focus:border-gold"
               rows={2}
+              maxLength={2000}
               value={uploadNotes}
               onChange={(e) => setUploadNotes(e.target.value)}
               placeholder="הערות כלליות על המסמך"
+              aria-describedby="upload-notes-hint"
             />
+            <p id="upload-notes-hint" className="text-[11px] text-slate-light mt-0.5">{uploadNotes.length}/2000</p>
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-slate-light">תמצית (אופציונלי)</label>
+            <label className="text-xs font-semibold text-slate-light">תמצית (אופציונלי, עד 5,000 תווים)</label>
             <textarea
               className="mt-1 w-full rounded-card border border-pearl bg-white p-3 text-sm focus:border-gold"
               rows={2}
+              maxLength={5000}
               value={uploadSummary}
               onChange={(e) => setUploadSummary(e.target.value)}
               placeholder="אם ריק – המערכת תנסה לחלץ תמצית אוטומטית מהקובץ."
+              aria-describedby="upload-summary-hint"
             />
+            <p id="upload-summary-hint" className="text-[11px] text-slate-light mt-0.5">{uploadSummary.length}/5000</p>
           </div>
 
           <div>
@@ -690,11 +710,19 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
                 נבחר: {uploadFile.name} ({Math.round(uploadFile.size / 1024)} KB)
               </p>
             )}
+            {uploadLoading && (
+              <div className="mt-2" role="progressbar" aria-valuenow={uploadProgress} aria-valuemin={0} aria-valuemax={100} aria-label="התקדמות העלאה">
+                <div className="h-2 w-full rounded-full bg-pearl overflow-hidden">
+                  <div className="h-full bg-gold transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                </div>
+                <p className="text-[11px] text-slate-light mt-1">{Math.round(uploadProgress)}%</p>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end">
-            <button className="btn-primary px-5" onClick={submitUpload} disabled={uploadLoading}>
-              <UploadCloud className="w-4 h-4" />
+            <button className="btn-primary px-5" onClick={submitUpload} disabled={uploadLoading} aria-busy={uploadLoading}>
+              {uploadLoading ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <UploadCloud className="w-4 h-4" aria-hidden="true" />}
               {uploadLoading ? 'מעלה...' : 'שמור מסמך'}
             </button>
           </div>
@@ -837,9 +865,11 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
                     type="button"
                     className="btn-primary text-[11px] px-4 py-2"
                     onClick={async () => {
+                      const url = selectedDoc.attachmentUrl;
+                      if (!url) return;
                       setOpeningAttachmentId(selectedDoc.id);
                       try {
-                        await openAttachment(selectedDoc.attachmentUrl as string, selectedDoc.title);
+                        await openAttachment(url, selectedDoc.title);
                       } finally {
                         setOpeningAttachmentId((prev) => (prev === selectedDoc.id ? null : prev));
                       }

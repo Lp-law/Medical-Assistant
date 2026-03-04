@@ -338,6 +338,12 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
                                         <p className="text-xs text-slate mt-2">
                                           {expandedDocId === d.id ? (d.summary || 'ללא תקציר') : previewText(d.summary || 'ללא תקציר')}
                                         </p>
+                                        {d.contentSnippet?.trim() && (
+                                          <p className="text-[11px] text-slate-light mt-1.5 pr-2 border-r-2 border-gold/40" title="קטע מתוך המסמך">
+                                            <span className="font-semibold text-slate">קטע מתוך המסמך: </span>
+                                            {expandedDocId === d.id ? (d.contentSnippet.trim().slice(0, 800) + (d.contentSnippet.length > 800 ? '…' : '')) : previewText(d.contentSnippet.trim(), 220)}
+                                          </p>
+                                        )}
                                         {isLongText(d.summary || '', 180) && (
                                           <div className="mt-1 flex justify-end">
                                             <button
@@ -449,9 +455,11 @@ const BotAssistantWidget: React.FC<Props> = ({ onOpenDocumentsWithQuery, open: c
                     type="button"
                     className="btn-primary text-[11px] px-4 py-2 inline-flex items-center gap-2"
                     onClick={async () => {
+                      const url = selectedDoc.attachmentUrl;
+                      if (!url) return;
                       setOpeningAttachmentId(selectedDoc.id);
                       try {
-                        await openAttachment(selectedDoc.attachmentUrl as string, selectedDoc.title);
+                        await openAttachment(url, selectedDoc.title);
                       } finally {
                         setOpeningAttachmentId((prev) => (prev === selectedDoc.id ? null : prev));
                       }

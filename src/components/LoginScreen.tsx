@@ -8,6 +8,16 @@ const LoginScreen: React.FC = () => {
   const [error, setError] = useState('');
   const { login, loading } = useAuth();
 
+  const loginErrorMessage = (err: unknown): string => {
+    const msg = err instanceof Error ? err.message : '';
+    if (msg === 'invalid_credentials' || msg === 'login_failed') return 'שם משתמש או סיסמה שגויים';
+    if (msg === 'too_many_login_attempts') return 'יותר מדי ניסיונות התחברות. נא לנסות שוב בעוד 15 דקות.';
+    if (msg === 'server_error') return 'שגיאת שרת. נא לנסות שוב מאוחר יותר.';
+    if (msg === 'invalid_body') return 'נא למלא שם משתמש וסיסמה.';
+    if (msg) return msg;
+    return 'שגיאה בהתחברות';
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -15,7 +25,7 @@ const LoginScreen: React.FC = () => {
       await login(username, password);
     } catch (err) {
       console.error(err);
-      setError('שם משתמש או סיסמה שגויים');
+      setError(loginErrorMessage(err));
     }
   };
 
@@ -44,11 +54,16 @@ const LoginScreen: React.FC = () => {
                <input type="password" className="w-full p-2 pr-10 border border-pearl rounded focus:ring-2 focus:ring-gold outline-none" placeholder="הזן סיסמה..." value={password} onChange={(e) => setPassword(e.target.value)} />
              </div>
           </div>
-          {error && <div className="text-danger text-sm text-center font-bold">{error}</div>}
+          {error && (
+            <div id="login-error" className="text-danger text-sm text-center font-bold" role="alert">
+              {error}
+            </div>
+          )}
           <button
             type="submit"
             className="btn-primary w-full justify-center py-3 font-bold shadow-card-xl disabled:opacity-50"
             disabled={loading}
+            aria-describedby={error ? 'login-error' : undefined}
           >
             {loading ? 'מתחבר...' : 'כניסה למערכת'}
           </button>

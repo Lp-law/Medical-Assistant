@@ -62,12 +62,15 @@ export const restoreSession = async (): Promise<AuthUser | null> => {
 /** Call server logout to clear the session cookie. */
 export const logoutRequest = async (): Promise<void> => {
   try {
-    await fetch(`${API_BASE_URL}/auth/logout`, {
+    const res = await fetch(`${API_BASE_URL}/auth/logout`, {
       method: 'POST',
       credentials: 'include',
     });
-  } catch {
-    // ignore
+    if (!res.ok) {
+      console.warn('[auth] Logout request failed:', res.status);
+    }
+  } catch (e) {
+    console.warn('[auth] Logout request failed', e);
   }
 };
 

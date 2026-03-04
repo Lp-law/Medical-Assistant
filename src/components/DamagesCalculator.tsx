@@ -129,8 +129,27 @@ const applyContribAndReductions = (
   return { afterContrib, afterAll, contribFactor, reductionsFactor };
 };
 
+/** Max size for JSON import (2MB). */
+const MAX_IMPORT_JSON_BYTES = 2 * 1024 * 1024;
+
+/** Basic validation for imported JSON structure (v1/v2/v3). */
+const validateImportedSheet = (parsed: unknown): parsed is { version: number; title?: unknown; rows?: unknown; reductions?: unknown; defendants?: unknown; contributoryNegligencePercent?: unknown; attorneyFeePercent?: unknown; plaintiffExpenses?: unknown; adjustments?: unknown } => {
+  if (!parsed || typeof parsed !== 'object') return false;
+  const o = parsed as Record<string, unknown>;
+  const v = o.version;
+  if (v !== 1 && v !== 2 && v !== 3) return false;
+  if (v === 3 || v === 2) {
+    if (o.rows !== undefined && !Array.isArray(o.rows)) return false;
+    if (o.reductions !== undefined && !Array.isArray(o.reductions)) return false;
+    if (o.defendants !== undefined && !Array.isArray(o.defendants)) return false;
+  }
+  if (v === 1 && o.adjustments !== undefined && !Array.isArray(o.adjustments)) return false;
+  return true;
+};
+
 const DamagesCalculator: React.FC = () => {
   const importRef = useRef<HTMLInputElement | null>(null);
+  const [storageSaveError, setStorageSaveError] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Sheet>(() => {
     try {
       // Prefer v3; if missing, try migrating from v2/v1.
@@ -254,12 +273,18 @@ const DamagesCalculator: React.FC = () => {
   });
 
   useEffect(() => {
+    setStorageSaveError(null);
     try {
       const next: Sheet = { ...sheet, updatedAt: new Date().toISOString() };
       storageSetItem(STORAGE_KEY_V3, JSON.stringify(next));
-    } catch {
-      // ignore
+    } catch (e) {
+      const msg =
+        typeof e === 'object' && e !== null && (e as DOMException).name === 'QuotaExceededError'
+          ? 'אין מקום פנוי באחסון המקומי – נא לפנות מקום או לייצא גיבוי.'
+          : 'שמירה מקומית נכשלה.';
+      setStorageSaveError(msg);
     }
+    // Persist only when these fields change; full `sheet` would trigger on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sheet.title, sheet.rows, sheet.contributoryNegligencePercent, sheet.reductions, sheet.defendants, sheet.attorneyFeePercent, sheet.plaintiffExpenses]);
 
@@ -423,15 +448,26 @@ const DamagesCalculator: React.FC = () => {
   };
 
   const importJson = async (file: File) => {
+    if (file.size > MAX_IMPORT_JSON_BYTES) {
+      throw new Error(`קובץ גדול מדי (עד ${MAX_IMPORT_JSON_BYTES / 1024 / 1024} MB).`);
+    }
     const text = await file.text();
-    const parsed = JSON.parse(text) as any;
-    // Support v3 import, and v2/v1 import (migrated).
-    if ((parsed as any).version === 3) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new Error('קובץ JSON לא תקין.');
+    }
+    if (!validateImportedSheet(parsed)) {
+      throw new Error('מבנה הקובץ לא נתמך (נדרשת גרסה 1, 2 או 3 של מחשבון הנזק).');
+    }
+    const p = parsed as { version: number; title?: unknown; rows?: unknown[]; reductions?: unknown[]; defendants?: unknown[]; contributoryNegligencePercent?: unknown; attorneyFeePercent?: unknown; plaintiffExpenses?: unknown; updatedAt?: unknown; adjustments?: unknown[] };
+    if (p.version === 3) {
       setSheet({
         version: 3,
-        title: String(parsed.title ?? 'מחשבון נזק'),
-        rows: Array.isArray(parsed.rows)
-          ? (parsed.rows as any[]).map((r) => ({
+        title: String(p.title ?? 'מחשבון נזק'),
+        rows: Array.isArray(p.rows)
+          ? p.rows.map((r: Record<string, unknown>) => ({
               id: String(r.id ?? uid()),
               enabled: Boolean(r.enabled ?? true),
               name: String(r.name ?? ''),
@@ -440,36 +476,36 @@ const DamagesCalculator: React.FC = () => {
               defendant: safeNumber(r.defendant),
             }))
           : [],
-        contributoryNegligencePercent: clampPercent(safeNumber((parsed as any).contributoryNegligencePercent)),
-        reductions: Array.isArray((parsed as any).reductions)
-          ? ((parsed as any).reductions as any[]).map((r) => ({
+        contributoryNegligencePercent: clampPercent(safeNumber(p.contributoryNegligencePercent)),
+        reductions: Array.isArray(p.reductions)
+          ? p.reductions.map((r: Record<string, unknown>) => ({
               id: String(r.id ?? uid()),
               enabled: Boolean(r.enabled ?? true),
               label: String(r.label ?? ''),
               percent: clampPercent(safeNumber(r.percent)),
             }))
           : [],
-        defendants: Array.isArray((parsed as any).defendants)
-          ? ((parsed as any).defendants as any[]).map((d) => ({
+        defendants: Array.isArray(p.defendants)
+          ? p.defendants.map((d: Record<string, unknown>) => ({
               id: String(d.id ?? uid()),
               enabled: Boolean(d.enabled ?? true),
               name: String(d.name ?? 'נתבע'),
               percent: clampPercent(safeNumber(d.percent)),
             }))
           : DEFAULT_DEFENDANTS,
-        attorneyFeePercent: clampPercent(safeNumber((parsed as any).attorneyFeePercent)),
-        plaintiffExpenses: safeNumber((parsed as any).plaintiffExpenses),
+        attorneyFeePercent: clampPercent(safeNumber(p.attorneyFeePercent)),
+        plaintiffExpenses: safeNumber(p.plaintiffExpenses),
         updatedAt: new Date().toISOString(),
       });
       return;
     }
 
-    if ((parsed as any).version === 2) {
+    if (p.version === 2) {
       setSheet({
         version: 3,
-        title: String(parsed.title ?? 'מחשבון נזק'),
-        rows: Array.isArray(parsed.rows)
-          ? (parsed.rows as any[]).map((r) => ({
+        title: String(p.title ?? 'מחשבון נזק'),
+        rows: Array.isArray(p.rows)
+          ? p.rows.map((r: Record<string, unknown>) => ({
               id: String(r.id ?? uid()),
               enabled: Boolean(r.enabled ?? true),
               name: String(r.name ?? ''),
@@ -478,38 +514,38 @@ const DamagesCalculator: React.FC = () => {
               defendant: safeNumber(r.defendant),
             }))
           : [],
-        contributoryNegligencePercent: clampPercent(safeNumber((parsed as any).contributoryNegligencePercent)),
-        reductions: Array.isArray((parsed as any).reductions)
-          ? ((parsed as any).reductions as any[]).map((r) => ({
+        contributoryNegligencePercent: clampPercent(safeNumber(p.contributoryNegligencePercent)),
+        reductions: Array.isArray(p.reductions)
+          ? p.reductions.map((r: Record<string, unknown>) => ({
               id: String(r.id ?? uid()),
               enabled: Boolean(r.enabled ?? true),
               label: String(r.label ?? ''),
               percent: clampPercent(safeNumber(r.percent)),
             }))
           : [],
-        defendants: Array.isArray((parsed as any).defendants)
-          ? ((parsed as any).defendants as any[]).map((d) => ({
+        defendants: Array.isArray(p.defendants)
+          ? p.defendants.map((d: Record<string, unknown>) => ({
               id: String(d.id ?? uid()),
               enabled: Boolean(d.enabled ?? true),
               name: String(d.name ?? 'נתבע'),
               percent: clampPercent(safeNumber(d.percent)),
             }))
           : DEFAULT_DEFENDANTS,
-        attorneyFeePercent: clampPercent(safeNumber((parsed as any).attorneyFeePercent)),
-        plaintiffExpenses: safeNumber((parsed as any).plaintiffExpenses),
+        attorneyFeePercent: clampPercent(safeNumber(p.attorneyFeePercent)),
+        plaintiffExpenses: safeNumber(p.plaintiffExpenses),
         updatedAt: new Date().toISOString(),
       });
       return;
     }
-    if ((parsed as any).version === 1) {
-      const v1Adjustments = Array.isArray((parsed as any).adjustments) ? ((parsed as any).adjustments as any[]) : [];
-      const contributory = v1Adjustments.find((a) => String(a.label ?? '').includes('אשם'))?.percent ?? 0;
-      const lossChance = v1Adjustments.find((a) => String(a.label ?? '').includes('סיכויי'))?.percent ?? 0;
+    if (p.version === 1) {
+      const v1Adjustments = Array.isArray(p.adjustments) ? p.adjustments : [];
+      const contributory = (v1Adjustments as Record<string, unknown>[]).find((a) => String(a?.label ?? '').includes('אשם'))?.percent ?? 0;
+      const lossChance = (v1Adjustments as Record<string, unknown>[]).find((a) => String(a?.label ?? '').includes('סיכויי'))?.percent ?? 0;
       setSheet({
         version: 3,
-        title: String(parsed.title ?? 'מחשבון נזק'),
-        rows: Array.isArray(parsed.rows)
-          ? (parsed.rows as any[])
+        title: String(p.title ?? 'מחשבון נזק'),
+        rows: Array.isArray(p.rows)
+          ? (p.rows as Record<string, unknown>[])
               .filter((r) => !isRemovedRow(String(r.name ?? '')))
               .map((r) => ({
                 id: String(r.id ?? uid()),
@@ -620,6 +656,12 @@ const DamagesCalculator: React.FC = () => {
           />
         </div>
       </div>
+
+      {storageSaveError && (
+        <div className="rounded-card border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800" role="alert">
+          {storageSaveError}
+        </div>
+      )}
 
       <div className="card-shell">
         <div className="card-accent" />

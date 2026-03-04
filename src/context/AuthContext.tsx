@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { PropsWithChildren } from 'react';
 import { login as loginRequest, restoreSession, logoutRequest, AuthUser } from '../services/authClient';
-import { setAuthToken } from '../services/api';
+import { setAuthToken, setOnUnauthorized } from '../services/api';
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -55,6 +55,11 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
     setAuthToken(null);
     logoutRequest();
   };
+
+  useEffect(() => {
+    setOnUnauthorized(() => logout);
+    return () => setOnUnauthorized(null);
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, token, login, logout, loading, initializing }}>

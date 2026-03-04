@@ -1,4 +1,4 @@
-import { apiRequest, authFetch } from './api';
+import { apiRequest, authFetch, API_BASE_URL, getAuthToken } from './api';
 import { CategoryRecord, DocumentRecord, DocumentSourceKey, DocumentTypeKey } from '../types';
 
 export const DOC_TYPES: DocumentTypeKey[] = ['פסק דין', 'חוות דעת', 'תחשיב נזק', 'סיכומים', 'מאמר', 'ספר'];
@@ -59,6 +59,8 @@ export interface UploadDocumentInput {
   notes?: string;
   summary?: string;
   file: File;
+  /** Optional: called with 0–100 during upload (uses XHR when provided). */
+  onProgress?: (percent: number) => void;
 }
 
 export const uploadDocument = async (input: UploadDocumentInput): Promise<DocumentRecord> => {
@@ -77,6 +79,35 @@ export const uploadDocument = async (input: UploadDocumentInput): Promise<Docume
   if (input.notes) formData.append('notes', input.notes);
   if (input.summary) formData.append('summary', input.summary ?? '');
   formData.append('file', input.file);
+
+  if (typeof input.onProgress === 'function') {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const url = `${API_BASE_URL}/documents/upload`;
+      xhr.open('POST', url);
+      xhr.withCredentials = true;
+      const token = getAuthToken();
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) input.onProgress!((100 * e.loaded) / e.total);
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const payload = JSON.parse(xhr.responseText) as { document: DocumentRecord };
+            input.onProgress?.(100);
+            resolve(payload.document);
+          } catch {
+            reject(new Error('upload_failed'));
+          }
+        } else {
+          reject(new Error(xhr.responseText || 'upload_failed'));
+        }
+      };
+      xhr.onerror = () => reject(new Error('upload_failed'));
+      xhr.send(formData);
+    });
+  }
 
   const response = await authFetch('/documents/upload', { method: 'POST', body: formData });
   if (!response.ok) {
