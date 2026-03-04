@@ -14,6 +14,7 @@ import {
 } from '../services/documentsApi';
 import { useAuth } from '../context/AuthContext';
 import { openAttachment } from '../utils/openAttachment';
+import { parseFilenameForUpload } from '../utils/parseFilenameForUpload';
 
 const badgeForCategory = (name?: string): string => {
   if (!name) return 'badge-muted';
@@ -90,6 +91,27 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
   const [topicsDraft, setTopicsDraft] = useState('');
   const [keywordsDraft, setKeywordsDraft] = useState('');
   const [tagsSaving, setTagsSaving] = useState(false);
+
+  /** When user selects/drops a file, parse its name and pre-fill doc type, category, field, expert, etc. */
+  const applyFilenameToForm = (file: File) => {
+    const nameWithoutExt = (file.name ?? '')
+      .replace(/\.(pdf|docx|doc)$/i, '')
+      .trim();
+    if (!nameWithoutExt) return;
+    const parsed = parseFilenameForUpload(nameWithoutExt);
+    if (parsed.docType) {
+      setUploadDocType(parsed.docType);
+      const categoryByType = categories.find((c) => c.name === parsed.docType);
+      if (categoryByType) setUploadCategoryId(categoryByType.id);
+    }
+    if (parsed.field) setUploadField(parsed.field);
+    if (parsed.expertName) setUploadExpertName(parsed.expertName);
+    if (parsed.articleAuthor) setUploadArticleAuthor(parsed.articleAuthor);
+    if (parsed.articleTitle !== undefined) setUploadArticleTitle(parsed.articleTitle ?? '');
+    if (parsed.bookAuthor) setUploadBookAuthor(parsed.bookAuthor);
+    if (parsed.bookName) setUploadBookName(parsed.bookName ?? '');
+    if (parsed.bookChapter) setUploadBookChapter(parsed.bookChapter ?? '');
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -540,6 +562,7 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
           <div>
             <p className="text-sm font-semibold">העלאת מסמך</p>
             <p className="text-xs text-slate-light">רק קבצי PDF ו-Word (DOCX), עד {MAX_UPLOAD_FILE_MB} MB. גרור קובץ או בחר מהמחשב. מלא סוג, תחום ופרטים לפי סוג המסמך.</p>
+            <p className="text-xs text-gold mt-1">טיפ: שם קובץ עם מקפים ממולא אוטומטית: פסק דין/תחשיב נזק/סיכומים – סוג ותחום (למשל: פסק דין - אורתופדיה). חוות דעת – סוג, מומחה ותחום (למשל: חוות דעת - ד&quot;ר יואב גרוסמן - שיניים). מאמר/ספר – ללא תחום.</p>
           </div>
         </div>
         <div className="card-underline" />
@@ -692,7 +715,10 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
                 const f = e.dataTransfer?.files?.[0];
                 if (!f) return;
                 const ext = (f.name ?? '').toLowerCase().split('.').pop();
-                if (ext === 'pdf' || ext === 'docx') setUploadFile(f);
+                if (ext === 'pdf' || ext === 'docx') {
+                  setUploadFile(f);
+                  applyFilenameToForm(f);
+                }
               }}
             >
               <p className="font-semibold text-navy">גרור קובץ PDF או DOCX לכאן</p>
@@ -702,7 +728,11 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
                 type="file"
                 accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 className="mt-2 block w-full text-sm text-slate file:mr-2 file:rounded file:border-0 file:bg-navy file:px-4 file:py-2 file:text-gold file:text-sm"
-                onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  setUploadFile(f);
+                  if (f) applyFilenameToForm(f);
+                }}
               />
             </div>
             {uploadFile && (
