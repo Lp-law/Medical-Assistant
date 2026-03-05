@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { X, FileQuestion, Check, AlertCircle } from 'lucide-react';
-import { getGapQuestions, buildProposal, type Question, type QuestionnairePatch, type SheetLike } from '../utils/questionnaire';
+import { X, FileQuestion, Check, AlertCircle, SkipForward } from 'lucide-react';
+import { getGapQuestions, buildProposal, SKIP_SENTINEL, type Question, type QuestionnairePatch, type SheetLike } from '../utils/questionnaire';
 import { t, type Lang } from '../utils/calcI18n';
 
 type Props = {
@@ -20,15 +20,16 @@ const QuestionnaireModal: React.FC<Props> = ({ lang, sheet, onApplyPatch, onClos
 
   const handleBuildProposal = () => {
     setError(null);
-    const requiredIds = questions.map((q) => q.id);
-    const missing = requiredIds.filter((id) => answers[id] === undefined || answers[id] === '');
-    if (missing.length > 0) {
-      setError(t('answersRequired', lang));
+    const patch = buildProposal(answers, sheet);
+    const hasChanges = Object.keys(patch).length > 0;
+    if (!hasChanges) {
+      setError(lang === 'he' ? 'ענה על שאלה אחת לפחות או בנה הצעה לאחר מילוי שדות.' : 'Answer at least one question or fill fields before building proposal.');
       return;
     }
-    const patch = buildProposal(answers, sheet);
     setPreview(patch);
   };
+
+  const isSkipped = (qId: string) => answers[qId] === SKIP_SENTINEL;
 
   const handleApply = () => {
     if (preview && Object.keys(preview).length > 0) {
@@ -71,20 +72,33 @@ const QuestionnaireModal: React.FC<Props> = ({ lang, sheet, onApplyPatch, onClos
                 <>
                   {questions.map((q) => (
                     <div key={q.id} className="space-y-1">
-                      <label className="block text-sm font-medium text-navy">{questionText(q)}</label>
-                      {q.type === 'percent' || q.type === 'number' ? (
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="block text-sm font-medium text-navy flex-1">{questionText(q)}</label>
+                        <button
+                          type="button"
+                          onClick={() => setAnswers((prev) => ({ ...prev, [q.id]: SKIP_SENTINEL }))}
+                          className="text-xs btn-outline px-2 py-1 shrink-0 inline-flex items-center gap-1"
+                          title={t('skip', lang)}
+                        >
+                          <SkipForward className="w-3 h-3" />
+                          {t('skip', lang)}
+                        </button>
+                      </div>
+                      {isSkipped(q.id) ? (
+                        <p className="text-xs text-slate italic">{lang === 'he' ? '(דולג)' : '(Skipped)'}</p>
+                      ) : q.type === 'percent' || q.type === 'number' ? (
                         <input
                           type="number"
                           min={q.min ?? 0}
                           max={q.max ?? 100}
-                          value={answers[q.id] ?? ''}
+                          value={answers[q.id] === SKIP_SENTINEL ? '' : (answers[q.id] ?? '')}
                           onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value === '' ? '' : Number(e.target.value) }))}
                           className="w-full rounded-card border border-pearl bg-white p-2 text-sm"
                         />
                       ) : (
                         <input
                           type="text"
-                          value={String(answers[q.id] ?? '')}
+                          value={answers[q.id] === SKIP_SENTINEL ? '' : String(answers[q.id] ?? '')}
                           onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
                           className="w-full rounded-card border border-pearl bg-white p-2 text-sm"
                         />

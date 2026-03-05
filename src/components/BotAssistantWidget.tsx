@@ -102,7 +102,7 @@ const BotAssistantWidget: React.FC<Props> = ({ mode = 'documents', onOpenDocumen
   const [error, setError] = useState<string | null>(null);
   const [categoryKey, setCategoryKey] = useState<BotCategoryKey>('all');
   const [history, setHistory] = useState<ChatTurn[]>([]);
-  const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
+  const [expandedDocId] = useState<string | null>(null);
   const [openingAttachmentId, setOpeningAttachmentId] = useState<string | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<AssistantDocumentHit | null>(null);
 

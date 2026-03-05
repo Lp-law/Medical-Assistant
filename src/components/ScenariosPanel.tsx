@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { BarChart3, FileDown } from 'lucide-react';
+import { BarChart3, Copy, Table, Image } from 'lucide-react';
 import { defaultScenarioParams, computeScenarioResult, type ScenarioParams, type ScenarioResult } from '../utils/scenarios';
-import { exportScenariosToWord } from '../utils/scenariosExport';
+import { exportScenariosToWord, copyScenariosTableOnly, copyScenariosChartOnly } from '../utils/scenariosExport';
 import { t, formatCurrency, type Lang } from '../utils/calcI18n';
 type Props = {
   lang: Lang;
@@ -15,6 +15,7 @@ const ScenariosPanel: React.FC<Props> = ({ lang, baseNets }) => {
     defaultScenarioParams()
   );
   const [exporting, setExporting] = useState(false);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
 
   const results: ScenarioResult[] = useMemo(() => {
     return SCENARIO_KEYS.map((key) => {
@@ -31,11 +32,52 @@ const ScenariosPanel: React.FC<Props> = ({ lang, baseNets }) => {
     }));
   };
 
-  const handleExport = async () => {
+  const clearMessage = () => {
+    if (copyMessage) setCopyMessage(null);
+  };
+
+  const handleCopyTable = async () => {
     setExporting(true);
+    setCopyMessage(null);
     try {
-      await exportScenariosToWord(results, lang);
-      // Could show toast "Copied"
+      await copyScenariosTableOnly(results, lang);
+      setCopyMessage(t('copiedTable', lang));
+      setTimeout(clearMessage, 3000);
+    } catch {
+      setCopyMessage(lang === 'he' ? 'שגיאה בהעתקה' : 'Copy failed');
+      setTimeout(clearMessage, 3000);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleCopyChart = async () => {
+    setExporting(true);
+    setCopyMessage(null);
+    try {
+      await copyScenariosChartOnly(results, lang);
+      setCopyMessage(t('copiedChart', lang));
+      setTimeout(clearMessage, 3000);
+    } catch {
+      setCopyMessage(lang === 'he' ? 'שגיאה בהעתקה' : 'Copy failed');
+      setTimeout(clearMessage, 3000);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleCopyToClipboard = async () => {
+    setExporting(true);
+    setCopyMessage(null);
+    try {
+      const { success, imageCopied } = await exportScenariosToWord(results, lang);
+      if (success) {
+        setCopyMessage(imageCopied ? t('copiedWithImage', lang) : t('copiedWithoutImage', lang));
+        setTimeout(clearMessage, 4000);
+      }
+    } catch {
+      setCopyMessage(lang === 'he' ? 'שגיאה בהעתקה' : 'Copy failed');
+      setTimeout(clearMessage, 3000);
     } finally {
       setExporting(false);
     }
@@ -88,15 +130,38 @@ const ScenariosPanel: React.FC<Props> = ({ lang, baseNets }) => {
         ))}
       </div>
 
-      <div className="flex justify-end">
+      {copyMessage && (
+        <p className="text-sm text-slate bg-pearl/40 rounded-card px-3 py-2" role="status">
+          {copyMessage}
+        </p>
+      )}
+      <div className="flex flex-wrap justify-end gap-2">
         <button
           type="button"
-          onClick={handleExport}
+          onClick={handleCopyTable}
+          disabled={exporting}
+          className="btn-outline px-4 py-2 text-sm inline-flex items-center gap-2 disabled:opacity-60"
+        >
+          <Table className="w-4 h-4" />
+          {t('copyTable', lang)}
+        </button>
+        <button
+          type="button"
+          onClick={handleCopyChart}
+          disabled={exporting}
+          className="btn-outline px-4 py-2 text-sm inline-flex items-center gap-2 disabled:opacity-60"
+        >
+          <Image className="w-4 h-4" />
+          {t('copyChart', lang)}
+        </button>
+        <button
+          type="button"
+          onClick={handleCopyToClipboard}
           disabled={exporting}
           className="btn-primary px-4 py-2 text-sm inline-flex items-center gap-2 disabled:opacity-60"
         >
-          <FileDown className="w-4 h-4" />
-          {t('exportScenariosToWord', lang)}
+          <Copy className="w-4 h-4" />
+          {t('copyToClipboard', lang)}
         </button>
       </div>
     </div>

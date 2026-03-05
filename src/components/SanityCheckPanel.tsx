@@ -17,15 +17,23 @@ const severityLabelKey: Record<CheckResult['severity'], string> = {
   P1: 'p1',
   P2: 'p2',
 };
+const severityBadgeStyle: Record<CheckResult['severity'], string> = {
+  P0: 'bg-red-100 text-red-800 border border-red-300',
+  P1: 'bg-amber-100 text-amber-800 border border-amber-300',
+  P2: 'bg-slate-100 text-slate-700 border border-slate-300',
+};
 
 const SanityCheckPanel: React.FC<Props> = ({ lang, sheet, totals, after, onApplyPatch }) => {
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<CheckResult[] | null>(null);
+  const [previewPatch, setPreviewPatch] = useState<SheetPatch | null>(null);
+  const [previewDescription, setPreviewDescription] = useState<string[]>([]);
 
   const runCheck = () => {
     const list = runSanityChecks(sheet, totals, after);
     setResults(list);
     setOpen(true);
+    setPreviewPatch(null);
   };
 
   const sortedResults = useMemo(() => {
@@ -37,14 +45,37 @@ const SanityCheckPanel: React.FC<Props> = ({ lang, sheet, totals, after, onApply
 
   const fixableCount = results?.filter((r) => r.canAutoFix && r.severity !== 'P0').length ?? 0;
 
+  const showPreview = (patch: SheetPatch | null, descriptions: string[]) => {
+    setPreviewPatch(patch);
+    setPreviewDescription(descriptions);
+  };
+
   const handleFix = (result: CheckResult) => {
     const patch = buildFixPatch(sheet, result);
-    if (patch) onApplyPatch(patch);
+    if (patch) {
+      const desc: string[] = [];
+      if (patch.defendants) desc.push(t('normalizeDefendants', lang));
+      if (patch.reductions) desc.push(t('removeDuplicateReduction', lang));
+      showPreview(patch, desc);
+    }
   };
 
   const handleFixAllSafe = () => {
     const patch = buildFixAllSafePatch(sheet, results ?? []);
-    if (patch) onApplyPatch(patch);
+    if (patch) {
+      const desc: string[] = [];
+      if (patch.defendants) desc.push(t('normalizeDefendants', lang));
+      if (patch.reductions) desc.push(t('removeDuplicateReduction', lang));
+      showPreview(patch, desc);
+    }
+  };
+
+  const applyPreview = () => {
+    if (previewPatch) {
+      onApplyPatch(previewPatch);
+      setPreviewPatch(null);
+      setPreviewDescription([]);
+    }
   };
 
   return (
@@ -100,15 +131,11 @@ const SanityCheckPanel: React.FC<Props> = ({ lang, sheet, totals, after, onApply
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div>
                             <span
-                              className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${
-                                r.severity === 'P0'
-                                  ? 'bg-red-100 text-red-800'
-                                  : r.severity === 'P1'
-                                    ? 'bg-amber-100 text-amber-800'
-                                    : 'bg-slate-100 text-slate-700'
-                              }`}
+                              className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium ${severityBadgeStyle[r.severity]}`}
+                              title={t(severityLabelKey[r.severity], lang)}
                             >
-                              {t(severityLabelKey[r.severity], lang)}
+                              <span aria-hidden>{r.severity}</span>
+                              <span>{t(severityLabelKey[r.severity], lang)}</span>
                             </span>
                             <p className="font-medium text-navy mt-1">{t(r.titleKey, lang)}</p>
                             <p className="text-slate mt-0.5">
@@ -130,6 +157,25 @@ const SanityCheckPanel: React.FC<Props> = ({ lang, sheet, totals, after, onApply
                       </li>
                     ))}
                   </ul>
+                  {previewPatch && (
+                    <div className="mt-3 rounded-card border-2 border-amber-400 bg-amber-50 p-3 text-sm">
+                      <p className="font-semibold text-navy mb-2">{t('previewBeforeAfter', lang)}</p>
+                      <ul className="list-disc list-inside text-slate mb-3">
+                        {previewDescription.map((d, i) => (
+                          <li key={i}>{d}</li>
+                        ))}
+                      </ul>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => setPreviewPatch(null)} className="btn-outline text-xs px-3 py-1.5">
+                          {t('cancel', lang)}
+                        </button>
+                        <button type="button" onClick={applyPreview} className="btn-primary text-xs px-3 py-1.5 inline-flex items-center gap-1">
+                          <Wrench className="w-3 h-3" />
+                          {t('applyFix', lang)}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>

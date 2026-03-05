@@ -104,8 +104,16 @@ export interface QuestionnairePatch {
   defendants?: Array<{ id: string; enabled: boolean; name: string; percent: number }>;
 }
 
+/** Sentinel for skipped questions; skipped fields are not included in the patch. */
+export const SKIP_SENTINEL = '__skip__';
+
+function isSkipped(v: unknown): boolean {
+  return v === SKIP_SENTINEL;
+}
+
 /**
- * Build a patch from answers. Caller applies via setSheetWithHistory(prev => ({ ...prev, ...patch })).
+ * Build a patch from answers. Skipped answers (SKIP_SENTINEL) are not included.
+ * Caller applies via setSheetWithHistory(prev => ({ ...prev, ...patch })).
  */
 export function buildProposal(
   answers: Record<string, string | number>,
@@ -114,21 +122,22 @@ export function buildProposal(
   const patch: QuestionnairePatch = {};
   const num = (key: string): number => {
     const v = answers[key];
+    if (isSkipped(v)) return 0;
     if (typeof v === 'number' && Number.isFinite(v)) return v;
     const n = Number(v);
     return Number.isFinite(n) ? n : 0;
   };
 
-  if ('contrib_neg' in answers) {
+  if ('contrib_neg' in answers && !isSkipped(answers['contrib_neg'])) {
     patch.contributoryNegligencePercent = Math.max(0, Math.min(100, num('contrib_neg')));
   }
-  if ('attorney_fee' in answers) {
+  if ('attorney_fee' in answers && !isSkipped(answers['attorney_fee'])) {
     patch.attorneyFeePercent = Math.max(0, Math.min(100, num('attorney_fee')));
   }
-  if ('plaintiff_expenses' in answers) {
+  if ('plaintiff_expenses' in answers && !isSkipped(answers['plaintiff_expenses'])) {
     patch.plaintiffExpenses = Math.max(0, num('plaintiff_expenses'));
   }
-  if ('loss_of_chance' in answers && num('loss_of_chance') > 0) {
+  if ('loss_of_chance' in answers && !isSkipped(answers['loss_of_chance']) && num('loss_of_chance') > 0) {
     const pct = Math.max(0, Math.min(100, num('loss_of_chance')));
     const newRed = {
       id: uid(),
@@ -140,7 +149,7 @@ export function buildProposal(
     };
     patch.reductions = [...sheet.reductions, newRed];
   }
-  if ('defendant_count' in answers) {
+  if ('defendant_count' in answers && !isSkipped(answers['defendant_count'])) {
     const count = Math.max(1, Math.min(10, Math.round(num('defendant_count'))));
     const current = sheet.defendants.filter((d) => d.enabled);
     const perPercent = Math.floor(100 / count);

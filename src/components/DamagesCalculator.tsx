@@ -123,10 +123,6 @@ const calcAvg = (p: number, d: number): number => (safeNumber(p) + safeNumber(d)
 
 const sum = (values: number[]): number => values.reduce((acc, v) => acc + safeNumber(v), 0);
 
-/** Sum of percent of enabled defendants. */
-const sumDefendantsPercent = (defendants: DefendantShare[]): number =>
-  sum(defendants.filter((d) => d.enabled).map((d) => d.percent));
-
 /**
  * Normalize defendant percents so enabled ones sum to 100%.
  * Proportional scaling; rounds to 2 decimals and adjusts last to fix rounding.
@@ -789,6 +785,8 @@ const DamagesCalculator: React.FC = () => {
     (patch: { defendants?: typeof sheet.defendants; reductions?: typeof sheet.reductions }) => {
       setSheetWithHistory((prev) => ({ ...prev, ...patch }));
     },
+    // sheet only used for typing; patch is applied to prev state
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [setSheetWithHistory]
   );
 
@@ -802,6 +800,8 @@ const DamagesCalculator: React.FC = () => {
     }) => {
       setSheetWithHistory((prev) => ({ ...prev, ...patch }));
     },
+    // sheet only used for typing
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [setSheetWithHistory]
   );
 

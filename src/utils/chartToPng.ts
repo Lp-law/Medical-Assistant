@@ -90,6 +90,23 @@ function drawBarChart(
       hAfter
     );
 
+    // Value labels above bars
+    ctx.fillStyle = '#333';
+    ctx.font = '11px Calibri, Arial, sans-serif';
+    ctx.textAlign = 'center';
+    if (seriesCount === 2 && hasBefore && beforeVal > 0) {
+      const yBefore = PADDING.top + chartHeight - beforeVal * scale - 4;
+      if (yBefore > PADDING.top + 10) {
+        ctx.fillText(formatNumber(lang, beforeVal), cx - (barWidth + BAR_GAP) / 2, yBefore);
+      }
+    }
+    if (afterVal > 0) {
+      const yAfter = PADDING.top + chartHeight - hAfter - 4;
+      if (yAfter > PADDING.top + 10) {
+        ctx.fillText(formatNumber(lang, afterVal), seriesCount === 2 ? cx + (barWidth + BAR_GAP) / 2 : cx, yAfter);
+      }
+    }
+
     // X-axis label
     ctx.fillStyle = '#333';
     ctx.textAlign = 'center';

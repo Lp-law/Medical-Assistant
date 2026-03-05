@@ -71,10 +71,9 @@ function cell(
   opts: { header?: boolean; alignRight?: boolean; dir?: string } = {}
 ): string {
   const { header = false, alignRight = false, dir } = opts;
+  const baseStyle = header ? (alignRight ? thNum : thStyle) : (alignRight ? tdNum : tdStyle);
   const style =
-    (header ? thStyle : tdStyle) +
-    (alignRight ? 'text-align:right;' : '') +
-    (dir ? `direction:${dir};text-align:${dir === 'rtl' ? 'right' : 'left'};` : '');
+    baseStyle + (dir ? `direction:${dir};text-align:${dir === 'rtl' ? 'right' : 'left'};` : '');
   const tag = header ? 'th' : 'td';
   return `<${tag} style="${style}">${escapeHtml(content)}</${tag}>`;
 }
@@ -101,7 +100,6 @@ export function buildWordHtml(
   const L = getLabels(lang);
   const rtl = isRtl(lang);
   const dir = rtl ? 'rtl' : 'ltr';
-  const numAlign = 'right';
 
   const activeRows = payload.sheet.rows.filter((r) => r.enabled);
   const calcAvg = (p: number, d: number) => (p + d) / 2;
@@ -204,7 +202,8 @@ export function buildWordPlainText(
   payload: ExportPayload,
   options: BuildWordHtmlOptions
 ): string {
-  const { lang, includeReductions, includeDefendants } = options;
+  const { lang, includeDefendants } = options;
+  void options.includeReductions; // reserved for future plain-text reductions section
   const L = getLabels(lang);
   const fmt = (n: number) => formatCurrency(lang, n);
   const activeRows = payload.sheet.rows.filter((r) => r.enabled);
