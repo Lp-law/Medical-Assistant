@@ -64,8 +64,8 @@ const labels = {
   },
 } as const;
 
-export function getLabels(lang: ExportLang): typeof labels.he {
-  return labels[lang];
+export function getLabels(lang: ExportLang): Record<keyof typeof labels.he, string> {
+  return labels[lang] as Record<keyof typeof labels.he, string>;
 }
 
 export function formatNumber(lang: ExportLang, value: number): string {

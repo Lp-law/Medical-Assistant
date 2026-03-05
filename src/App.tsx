@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Calculator } from 'lucide-react';
+import { LangProvider } from './context/LangContext';
 import DamagesCalculator from './components/DamagesCalculator';
 import BotAssistantWidget from './components/BotAssistantWidget';
 
@@ -7,6 +8,7 @@ const App: React.FC = () => {
   const [botOpen, setBotOpen] = useState(false);
 
   return (
+    <LangProvider>
     <div className="min-h-screen bg-pearl text-navy" dir="rtl">
       <div className="flex flex-col min-h-screen">
         <header className="h-16 bg-navy text-gold flex items-center justify-between px-6 shadow-lg">
@@ -28,6 +30,7 @@ const App: React.FC = () => {
 
       <BotAssistantWidget mode="calculator" open={botOpen} onOpenChange={setBotOpen} />
     </div>
+    </LangProvider>
   );
 };
 

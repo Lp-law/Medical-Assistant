@@ -5,6 +5,10 @@ import { getBuiltInTemplates, getSavedTemplates, saveTemplate, deleteSavedTempla
 import { exportDamagesToDocx } from '../utils/exportDamagesDocx';
 import ExportForWordModal from './ExportForWordModal';
 import type { ExportPayload } from '../utils/exportForWordHtml';
+import { useLang } from '../context/LangContext';
+import SanityCheckPanel from './SanityCheckPanel';
+import QuestionnaireModal from './QuestionnaireModal';
+import ScenariosPanel from './ScenariosPanel';
 
 type HeadRowKind = 'add' | 'deduct';
 
@@ -759,7 +763,9 @@ const DamagesCalculator: React.FC = () => {
     };
   }, [activeDefendants, after.avg.afterAll, after.defendant.afterAll, after.plaintiff.afterAll]);
 
+  const { lang, setLang } = useLang();
   const [exportForWordOpen, setExportForWordOpen] = useState(false);
+  const [questionnaireOpen, setQuestionnaireOpen] = useState(false);
   const exportForWordPayload: ExportPayload = useMemo(
     () => ({
       sheet: {
@@ -779,11 +785,50 @@ const DamagesCalculator: React.FC = () => {
     [sheet, totals, after, attorneyFeeAndGross, defendantAmounts]
   );
 
+  const applySanityPatch = useCallback(
+    (patch: { defendants?: typeof sheet.defendants; reductions?: typeof sheet.reductions }) => {
+      setSheetWithHistory((prev) => ({ ...prev, ...patch }));
+    },
+    [setSheetWithHistory]
+  );
+
+  const applyQuestionnairePatch = useCallback(
+    (patch: {
+      contributoryNegligencePercent?: number;
+      attorneyFeePercent?: number;
+      plaintiffExpenses?: number;
+      reductions?: typeof sheet.reductions;
+      defendants?: typeof sheet.defendants;
+    }) => {
+      setSheetWithHistory((prev) => ({ ...prev, ...patch }));
+    },
+    [setSheetWithHistory]
+  );
+
   return (
     <div className="space-y-6" dir="rtl">
       <div className="rounded-card border border-pearl bg-white p-4 shadow-card-xl flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="space-y-1">
-          <p className="text-lg font-semibold text-navy">מחשבון נזק</p>
+          <div className="flex items-center gap-3 flex-wrap">
+            <p className="text-lg font-semibold text-navy">מחשבון נזק</p>
+            <span className="text-xs text-slate-light flex items-center gap-2">
+              <span>שפה / Language:</span>
+              <button
+                type="button"
+                onClick={() => setLang('he')}
+                className={`px-2 py-1 rounded text-xs font-medium ${lang === 'he' ? 'bg-navy text-gold' : 'bg-pearl text-slate'}`}
+              >
+                עברית
+              </button>
+              <button
+                type="button"
+                onClick={() => setLang('en-GB')}
+                className={`px-2 py-1 rounded text-xs font-medium ${lang === 'en-GB' ? 'bg-navy text-gold' : 'bg-pearl text-slate'}`}
+              >
+                English
+              </button>
+            </span>
+          </div>
           <p className="text-xs text-slate-light">טבלה דינמית · תובע/נתבע/ממוצע · הפחתות באחוזים · שמירה מקומית</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -835,6 +880,10 @@ const DamagesCalculator: React.FC = () => {
             <RotateCcw className="w-4 h-4" />
             איפוס
           </button>
+          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={() => setQuestionnaireOpen(true)}>
+            <FileText className="w-4 h-4" />
+            {lang === 'he' ? 'שאלון חכמה' : 'Smart questionnaire'}
+          </button>
           <input
             ref={importRef}
             type="file"
@@ -868,6 +917,23 @@ const DamagesCalculator: React.FC = () => {
           </ul>
         </div>
       )}
+
+      <SanityCheckPanel
+        lang={lang}
+        sheet={sheet}
+        totals={totals}
+        after={after}
+        onApplyPatch={applySanityPatch}
+      />
+
+      <ScenariosPanel
+        lang={lang}
+        baseNets={{
+          plaintiffNet: totals.plaintiffNet,
+          defendantNet: totals.defendantNet,
+          avgNet: totals.avgNet,
+        }}
+      />
 
       <div className="card-shell">
         <div className="card-accent" />
@@ -1373,6 +1439,15 @@ const DamagesCalculator: React.FC = () => {
         <ExportForWordModal
           payload={exportForWordPayload}
           onClose={() => setExportForWordOpen(false)}
+        />
+      )}
+
+      {questionnaireOpen && (
+        <QuestionnaireModal
+          lang={lang}
+          sheet={sheet}
+          onApplyPatch={applyQuestionnairePatch}
+          onClose={() => setQuestionnaireOpen(false)}
         />
       )}
 
