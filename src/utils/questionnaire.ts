@@ -18,7 +18,7 @@ export interface Question {
 
 export interface SheetLike {
   rows: Array<{ enabled: boolean; name: string }>;
-  reductions: Array<{ id: string; enabled: boolean; label: string; percent: number; type?: 'percent' | 'nii'; value?: number }>;
+  reductions: Array<{ id: string; enabled: boolean; label: string; percent: number; type?: 'percent' | 'nii' | 'risk'; value?: number }>;
   defendants: Array<{ id: string; enabled: boolean; name: string; percent: number }>;
   contributoryNegligencePercent: number;
 }
@@ -112,7 +112,7 @@ export interface QuestionnairePatch {
   contributoryNegligencePercent?: number;
   attorneyFeePercent?: number;
   plaintiffExpenses?: number;
-  reductions?: Array<{ id: string; enabled: boolean; label: string; percent: number; type?: 'percent' | 'nii'; value?: number }>;
+  reductions?: Array<{ id: string; enabled: boolean; label: string; percent: number; type?: 'percent' | 'nii' | 'risk'; value?: number }>;
   defendants?: Array<{ id: string; enabled: boolean; name: string; percent: number }>;
 }
 
@@ -177,6 +177,7 @@ export function buildProposal(
         ? 'פגיעה בסיכויי החלמה (%)'
         : 'Loss of chance (%)',
       percent: pct,
+      type: 'risk' as const,
     };
     patch.reductions = [...sheet.reductions, newRed];
   }

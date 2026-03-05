@@ -27,8 +27,8 @@ type Reduction = {
   enabled: boolean;
   label: string;
   percent: number; // 0-100
-  /** 'nii' = תגמולי מל"ל (absolute amount in value); default = percent-based */
-  type?: 'percent' | 'nii';
+  /** 'nii' = תגמולי מל"ל (amount in value); 'risk' = סיכון/פגיעה בסיכויי החלמה (%); default = percent */
+  type?: 'percent' | 'nii' | 'risk';
   /** For type 'nii': amount in ₪ to deduct after contrib */
   value?: number;
 };
@@ -105,7 +105,7 @@ const DEFAULT_ROWS: HeadRow[] = [
 ];
 
 const DEFAULT_REDUCTIONS: Reduction[] = [
-  { id: uid(), enabled: true, label: 'פגיעה בסיכויי החלמה (%)', percent: 0 },
+  { id: uid(), enabled: true, label: 'פגיעה בסיכויי החלמה (%)', percent: 0, type: 'risk' },
 ];
 
 const DEFAULT_DEFENDANTS: DefendantShare[] = [
@@ -292,7 +292,7 @@ const DamagesCalculator: React.FC = () => {
                 enabled: Boolean(r.enabled ?? true),
                 label: String(r.label ?? ''),
                 percent: clampPercent(safeNumber(r.percent)),
-                type: r.type === 'nii' ? 'nii' : undefined,
+                type: r.type === 'nii' ? 'nii' : r.type === 'risk' ? 'risk' : undefined,
                 value: r.type === 'nii' ? Math.max(0, safeNumber(r.value)) : undefined,
               }))
             : DEFAULT_REDUCTIONS,
@@ -333,7 +333,7 @@ const DamagesCalculator: React.FC = () => {
                 enabled: Boolean(r.enabled ?? true),
                 label: String(r.label ?? ''),
                 percent: clampPercent(safeNumber(r.percent)),
-                type: r.type === 'nii' ? 'nii' : undefined,
+                type: r.type === 'nii' ? 'nii' : r.type === 'risk' ? 'risk' : undefined,
                 value: r.type === 'nii' ? Math.max(0, safeNumber(r.value)) : undefined,
               }))
             : DEFAULT_REDUCTIONS,
@@ -503,6 +503,15 @@ const DamagesCalculator: React.FC = () => {
       ],
     }));
 
+  const addRiskReduction = () =>
+    setSheetWithHistory((prev) => ({
+      ...prev,
+      reductions: [
+        ...prev.reductions,
+        { id: uid(), enabled: true, label: lang === 'he' ? 'פגיעה בסיכויי החלמה (%)' : 'Loss of chance (%)', percent: 0, type: 'risk' as const },
+      ],
+    }));
+
   const reset = () => setSheetWithHistory((prev) => ({ ...defaultSheet(), title: prev.title }));
 
   const exportJson = () => {
@@ -608,7 +617,7 @@ const DamagesCalculator: React.FC = () => {
               enabled: Boolean(r.enabled ?? true),
               label: String(r.label ?? ''),
               percent: clampPercent(safeNumber(r.percent)),
-              type: r.type === 'nii' ? 'nii' : undefined,
+              type: r.type === 'nii' ? 'nii' : r.type === 'risk' ? 'risk' : undefined,
               value: r.type === 'nii' ? Math.max(0, safeNumber(r.value)) : undefined,
             }))
           : [],
@@ -648,7 +657,7 @@ const DamagesCalculator: React.FC = () => {
               enabled: Boolean(r.enabled ?? true),
               label: String(r.label ?? ''),
               percent: clampPercent(safeNumber(r.percent)),
-              type: r.type === 'nii' ? 'nii' : undefined,
+              type: r.type === 'nii' ? 'nii' : r.type === 'risk' ? 'risk' : undefined,
               value: r.type === 'nii' ? Math.max(0, safeNumber(r.value)) : undefined,
             }))
           : [],
@@ -889,6 +898,10 @@ const DamagesCalculator: React.FC = () => {
           <button type="button" className="btn-outline text-sm px-4 py-2" onClick={addNiiReduction}>
             <Plus className="w-4 h-4" />
             {lang === 'he' ? 'מל״ל (סכום)' : 'NII (amount)'}
+          </button>
+          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={addRiskReduction}>
+            <Plus className="w-4 h-4" />
+            {lang === 'he' ? 'סיכון (%)' : 'Risk (%)'}
           </button>
           <button type="button" className="btn-outline text-sm px-4 py-2" onClick={addDefendant}>
             <Plus className="w-4 h-4" />

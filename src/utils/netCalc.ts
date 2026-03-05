@@ -6,7 +6,7 @@
 
 export type ReductionForNet = {
   enabled: boolean;
-  type?: 'percent' | 'nii';
+  type?: 'percent' | 'nii' | 'risk';
   percent?: number;
   value?: number;
   label?: string;
@@ -19,24 +19,27 @@ export type SheetForNet = {
 
 const clampPct = (x: number): number => Math.max(0, Math.min(100, x));
 
-/** NII = תגמולי מל"ל. Sum of enabled reductions with type === 'nii' (value = amount in ₪). */
+/** NII = תגמולי מל"ל. Sum of enabled reductions with type === 'nii' and numeric positive value only. */
 export function getNiiAmount(reductions: ReductionForNet[]): number {
   return reductions
     .filter((r) => r.enabled && r.type === 'nii')
     .reduce((sum, r) => {
       const v = r.value;
-      return sum + (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, v) : 0);
+      if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) return sum;
+      return sum + v;
     }, 0);
 }
 
-/** Risk % from first enabled loss-of-chance reduction (by label), or 0. */
+/** Risk %: first enabled reduction with type === 'risk', else fallback to label-based (backward compat). */
 export function getRiskPctFromSheet(reductions: ReductionForNet[]): number {
+  const byType = reductions.find((r) => r.enabled && r.type === 'risk');
+  if (byType != null) return clampPct(Number(byType.percent) || 0);
   const label = (r: ReductionForNet) => (r.label || '').toLowerCase();
-  const lossOfChance = reductions.find(
+  const byLabel = reductions.find(
     (r) => r.enabled && /סיכוי|חלמה|loss|chance|risk/i.test(label(r))
   );
-  if (!lossOfChance) return 0;
-  return clampPct(Number(lossOfChance.percent) || 0);
+  if (!byLabel) return 0;
+  return clampPct(Number(byLabel.percent) || 0);
 }
 
 export interface CalcNetTotalsResult {

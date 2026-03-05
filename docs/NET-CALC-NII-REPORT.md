@@ -23,8 +23,8 @@
 
 1. **Total Before** — נטו משורות (תוספות − קיזוזים).
 2. **Contributory Negligence** — `afterContrib = before * (1 - contribPct/100)`.
-3. **NII (תגמולי מל״ל)** — חיסור סכומי: `afterNii = max(afterContrib - niiAmount, 0)`; `niiAmount` = סכום כל ה-reductions עם `type === 'nii'` ו-`value`.
-4. **Risk / Loss of Chance** — `afterRisk = afterNii * (1 - riskPct/100)`; `riskPct` מהגיליון (הפחתה לפי label) או מתרחיש.
+3. **NII (תגמולי מל״ל)** — חיסור סכומי: `afterNii = max(afterContrib - niiAmount, 0)`; `niiAmount` = סכום reductions עם `enabled`, `type === 'nii'`, ו-`value` מספרי וחיובי בלבד.
+4. **Risk / Loss of Chance** — `afterRisk = afterNii * (1 - riskPct/100)`; `riskPct` מהגיליון: קודם מ-`type === 'risk'`, אחרת fallback לפי label.
 5. **Defendants allocation** — על **Total After** (`afterRisk`).
 
 ---
@@ -137,6 +137,20 @@ const sheetForNet = { contributoryNegligencePercent: sheet.contributoryNegligenc
 const plaintiff = computeAfter(totals.plaintiffNet, sheetForNet);
 // ...
 ```
+
+---
+
+## Hardening (NII / Risk) — עדכון
+
+- **getNiiAmount (netCalc.ts):** מסכמים רק reductions עם `enabled === true`, `type === 'nii'`, ו-`value` מספרי וחיובי. ערך לא מספרי או ≤0 לא נספר.
+- **טיפוס reduction type 'risk':** הורחב ל-`type?: 'percent' | 'nii' | 'risk'` בכל המקומות (DamagesCalculator, netCalc, questionnaire, scenarios, ScenariosPanel).
+- **getRiskPctFromSheet (netCalc.ts):**  
+  א) קודם מחפשים `enabled && type === 'risk'` ומחזירים את ה-`percent` שלהם.  
+  ב) אם לא נמצא — fallback לזיהוי לפי label (סיכוי|חלמה|loss|chance|risk) לתאימות לאחור.
+- **UI:** כפתור "סיכון (%)" / "Risk (%)" שמוסיף הפחתה עם `type: 'risk'` ו-`percent`. ברירת המחדל של ההפחתה "פגיעה בסיכויי החלמה (%)" היא `type: 'risk'`. בשאלון — כשמוסיפים הפחתת loss of chance נוצר reduction עם `type: 'risk'`.
+- **Import/JSON:** בעת טעינה שומרים `type: 'risk'` כשקיים (פרסור reductions).
+
+לוגיקה עסקית (סדר החישוב, נוסחאות) לא השתנתה.
 
 ---
 
