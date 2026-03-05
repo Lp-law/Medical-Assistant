@@ -122,6 +122,9 @@ const QuestionnaireModal: React.FC<Props> = ({ lang, sheet, onApplyPatch, onClos
                     {preview.reductions && preview.reductions.length > sheet.reductions.length && (
                       <li>{t('reductionsSection', lang)}: +1</li>
                     )}
+                    {preview.reductions?.some((r) => (r as { type?: string }).type === 'nii') && (
+                      <li>{t('niiLabel', lang)}: ₪ {(preview.reductions.find((r) => (r as { type?: string }).type === 'nii') as { value?: number })?.value ?? 0}</li>
+                    )}
                     {preview.defendants && (
                       <li>{t('defendantsSection', lang)}: {preview.defendants.length} {t('defendantName', lang)}s</li>
                     )}

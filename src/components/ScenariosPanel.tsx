@@ -6,11 +6,13 @@ import { t, formatCurrency, type Lang } from '../utils/calcI18n';
 type Props = {
   lang: Lang;
   baseNets: { plaintiffNet: number; defendantNet: number; avgNet: number };
+  /** Sheet reductions (percent and/or type 'nii' with value) for NII + risk in scenarios */
+  sheetReductions: Array<{ label?: string; percent?: number; enabled: boolean; type?: 'percent' | 'nii'; value?: number }>;
 };
 
 const SCENARIO_KEYS: Array<'conservative' | 'reasonable' | 'aggressive'> = ['conservative', 'reasonable', 'aggressive'];
 
-const ScenariosPanel: React.FC<Props> = ({ lang, baseNets }) => {
+const ScenariosPanel: React.FC<Props> = ({ lang, baseNets, sheetReductions }) => {
   const [params, setParams] = useState<Record<'conservative' | 'reasonable' | 'aggressive', ScenarioParams>>(
     defaultScenarioParams()
   );
@@ -20,10 +22,10 @@ const ScenariosPanel: React.FC<Props> = ({ lang, baseNets }) => {
   const results: ScenarioResult[] = useMemo(() => {
     return SCENARIO_KEYS.map((key) => {
       const p = params[key];
-      const res = computeScenarioResult(baseNets, p);
+      const res = computeScenarioResult(baseNets, p, sheetReductions);
       return { ...res, labelKey: key };
     });
-  }, [params, baseNets]);
+  }, [params, baseNets, sheetReductions]);
 
   const updateParam = (key: 'conservative' | 'reasonable' | 'aggressive', field: keyof ScenarioParams, value: number) => {
     setParams((prev) => ({

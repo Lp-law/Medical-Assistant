@@ -1,7 +1,10 @@
 /**
  * Three scenarios (Conservative / Reasonable / Aggressive): compute totals before/after
- * using the same logic as the calculator. No LLM; deterministic.
+ * using the same order as the calculator. No LLM; deterministic.
+ * Order: Before → contrib → NII (absolute from sheet) → risk (scenario lossOfChancePct).
  */
+
+import { calcNetTotals, type SheetForNet } from './netCalc';
 
 const clamp = (x: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, x));
 
@@ -19,38 +22,51 @@ export interface ScenarioParams {
 export interface ScenarioResult {
   labelKey: 'conservative' | 'reasonable' | 'aggressive';
   params: ScenarioParams;
-  /** Net totals (before reductions) - same for all scenarios, from base sheet */
+  /** Total Before (net from sheet) - same for all scenarios */
   before: { plaintiff: number; defendant: number; avg: number };
-  /** After contrib + reductions (loss of chance only for this scenario) */
+  /** Total After: contrib → NII (sheet) → risk (scenario) */
   after: { plaintiff: number; defendant: number; avg: number };
 }
 
-function applyContribAndLossOfChance(
-  net: number,
-  contribPct: number,
-  lossOfChancePct: number
-): number {
-  const afterContrib = net * (1 - clamp(contribPct, 0, 100) / 100);
-  const afterLoss = afterContrib * (1 - clamp(lossOfChancePct, 0, 100) / 100);
-  return afterLoss;
-}
+/** Reductions from sheet (id optional for netCalc). */
+export type ScenarioSheetReductions = Array<{
+  enabled: boolean;
+  type?: 'percent' | 'nii';
+  percent?: number;
+  value?: number;
+  label?: string;
+}>;
 
 /**
- * Compute before/after for one scenario. Base totals come from the current sheet.
+ * Compute before/after for one scenario. NII from sheet; contrib and risk from scenario params.
  */
 export function computeScenarioResult(
   baseNets: { plaintiffNet: number; defendantNet: number; avgNet: number },
-  params: ScenarioParams
+  params: ScenarioParams,
+  sheetReductions: ScenarioSheetReductions
 ): Omit<ScenarioResult, 'labelKey'> {
+  const sheetForNet: SheetForNet = {
+    contributoryNegligencePercent: params.contribNegPct,
+    reductions: sheetReductions.map((r) => ({
+      enabled: r.enabled,
+      type: r.type,
+      percent: r.percent,
+      value: r.value,
+      label: r.label,
+    })),
+  };
+  const plaintiffRes = calcNetTotals(baseNets.plaintiffNet, sheetForNet, { riskPct: params.lossOfChancePct });
+  const defendantRes = calcNetTotals(baseNets.defendantNet, sheetForNet, { riskPct: params.lossOfChancePct });
+  const avgRes = calcNetTotals(baseNets.avgNet, sheetForNet, { riskPct: params.lossOfChancePct });
   const before = {
     plaintiff: baseNets.plaintiffNet,
     defendant: baseNets.defendantNet,
     avg: baseNets.avgNet,
   };
   const after = {
-    plaintiff: applyContribAndLossOfChance(baseNets.plaintiffNet, params.contribNegPct, params.lossOfChancePct),
-    defendant: applyContribAndLossOfChance(baseNets.defendantNet, params.contribNegPct, params.lossOfChancePct),
-    avg: applyContribAndLossOfChance(baseNets.avgNet, params.contribNegPct, params.lossOfChancePct),
+    plaintiff: plaintiffRes.after,
+    defendant: defendantRes.after,
+    avg: avgRes.after,
   };
   return { params, before, after };
 }

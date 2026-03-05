@@ -6,6 +6,7 @@ import { exportDamagesToDocx } from '../utils/exportDamagesDocx';
 import ExportForWordModal from './ExportForWordModal';
 import type { ExportPayload } from '../utils/exportForWordHtml';
 import { useLang } from '../context/LangContext';
+import { calcNetTotals } from '../utils/netCalc';
 import SanityCheckPanel from './SanityCheckPanel';
 import QuestionnaireModal from './QuestionnaireModal';
 import ScenariosPanel from './ScenariosPanel';
@@ -26,6 +27,10 @@ type Reduction = {
   enabled: boolean;
   label: string;
   percent: number; // 0-100
+  /** 'nii' = תגמולי מל"ל (absolute amount in value); default = percent-based */
+  type?: 'percent' | 'nii';
+  /** For type 'nii': amount in ₪ to deduct after contrib */
+  value?: number;
 };
 
 type DefendantShare = {
@@ -157,19 +162,30 @@ const normalizeDefendants = (defendants: DefendantShare[]): DefendantShare[] => 
   return defendants.map((d) => (d.enabled && updated.has(d.id) ? { ...d, percent: updated.get(d.id)! } : d));
 };
 
-const applyContribAndReductions = (
+/** Uses single source of truth: contrib → NII (absolute) → risk %. */
+function computeAfter(
   base: number,
-  contributoryNegligencePercent: number,
-  reductions: Reduction[],
-): { afterContrib: number; afterAll: number; contribFactor: number; reductionsFactor: number } => {
-  const contribFactor = 1 - clampPercent(contributoryNegligencePercent) / 100;
-  const afterContrib = base * contribFactor;
-  const reductionsFactor = reductions
-    .filter((r) => r.enabled)
-    .reduce((acc, r) => acc * (1 - clampPercent(r.percent) / 100), 1);
-  const afterAll = afterContrib * reductionsFactor;
-  return { afterContrib, afterAll, contribFactor, reductionsFactor };
-};
+  sheet: { contributoryNegligencePercent: number; reductions: Reduction[] }
+): { afterContrib: number; afterAll: number; contribFactor: number; reductionsFactor: number } {
+  const res = calcNetTotals(base, {
+    contributoryNegligencePercent: sheet.contributoryNegligencePercent,
+    reductions: sheet.reductions.map((r) => ({
+      enabled: r.enabled,
+      type: r.type,
+      percent: r.percent,
+      value: r.value,
+      label: r.label,
+    })),
+  });
+  const contribFactor = res.before > 0 ? res.afterContrib / res.before : 1;
+  const reductionsFactor = res.afterContrib > 0 ? res.after / res.afterContrib : 0;
+  return {
+    afterContrib: res.afterContrib,
+    afterAll: res.after,
+    contribFactor,
+    reductionsFactor,
+  };
+}
 
 /** Max size for JSON import (2MB). */
 const MAX_IMPORT_JSON_BYTES = 2 * 1024 * 1024;
@@ -276,6 +292,8 @@ const DamagesCalculator: React.FC = () => {
                 enabled: Boolean(r.enabled ?? true),
                 label: String(r.label ?? ''),
                 percent: clampPercent(safeNumber(r.percent)),
+                type: r.type === 'nii' ? 'nii' : undefined,
+                value: r.type === 'nii' ? Math.max(0, safeNumber(r.value)) : undefined,
               }))
             : DEFAULT_REDUCTIONS,
           defendants: Array.isArray((parsed as any).defendants)
@@ -315,6 +333,8 @@ const DamagesCalculator: React.FC = () => {
                 enabled: Boolean(r.enabled ?? true),
                 label: String(r.label ?? ''),
                 percent: clampPercent(safeNumber(r.percent)),
+                type: r.type === 'nii' ? 'nii' : undefined,
+                value: r.type === 'nii' ? Math.max(0, safeNumber(r.value)) : undefined,
               }))
             : DEFAULT_REDUCTIONS,
           defendants: Array.isArray((parsed as any).defendants)
@@ -416,10 +436,11 @@ const DamagesCalculator: React.FC = () => {
   }, [activeRows]);
 
   const after = useMemo(() => {
-    // Apply reductions on the NET total (after deductions like מל"ל).
-    const plaintiff = applyContribAndReductions(totals.plaintiffNet, sheet.contributoryNegligencePercent, sheet.reductions);
-    const defendant = applyContribAndReductions(totals.defendantNet, sheet.contributoryNegligencePercent, sheet.reductions);
-    const avg = applyContribAndReductions(totals.avgNet, sheet.contributoryNegligencePercent, sheet.reductions);
+    // Order: Before → contrib → NII (absolute) → risk %. Defendants on final.
+    const sheetForNet = { contributoryNegligencePercent: sheet.contributoryNegligencePercent, reductions: sheet.reductions };
+    const plaintiff = computeAfter(totals.plaintiffNet, sheetForNet);
+    const defendant = computeAfter(totals.defendantNet, sheetForNet);
+    const avg = computeAfter(totals.avgNet, sheetForNet);
     return { plaintiff, defendant, avg };
   }, [sheet.contributoryNegligencePercent, sheet.reductions, totals.avgNet, totals.defendantNet, totals.plaintiffNet]);
 
@@ -471,6 +492,15 @@ const DamagesCalculator: React.FC = () => {
     setSheetWithHistory((prev) => ({
       ...prev,
       reductions: [...prev.reductions, { id: uid(), enabled: true, label: 'הפחתה נוספת (%)', percent: 0 }],
+    }));
+
+  const addNiiReduction = () =>
+    setSheetWithHistory((prev) => ({
+      ...prev,
+      reductions: [
+        ...prev.reductions,
+        { id: uid(), enabled: true, label: lang === 'he' ? 'מל״ל' : 'NII', percent: 0, type: 'nii' as const, value: 0 },
+      ],
     }));
 
   const reset = () => setSheetWithHistory((prev) => ({ ...defaultSheet(), title: prev.title }));
@@ -578,6 +608,8 @@ const DamagesCalculator: React.FC = () => {
               enabled: Boolean(r.enabled ?? true),
               label: String(r.label ?? ''),
               percent: clampPercent(safeNumber(r.percent)),
+              type: r.type === 'nii' ? 'nii' : undefined,
+              value: r.type === 'nii' ? Math.max(0, safeNumber(r.value)) : undefined,
             }))
           : [],
         defendants: Array.isArray(p.defendants)
@@ -616,6 +648,8 @@ const DamagesCalculator: React.FC = () => {
               enabled: Boolean(r.enabled ?? true),
               label: String(r.label ?? ''),
               percent: clampPercent(safeNumber(r.percent)),
+              type: r.type === 'nii' ? 'nii' : undefined,
+              value: r.type === 'nii' ? Math.max(0, safeNumber(r.value)) : undefined,
             }))
           : [],
         defendants: Array.isArray(p.defendants)
@@ -852,6 +886,10 @@ const DamagesCalculator: React.FC = () => {
             <Plus className="w-4 h-4" />
             הוסף הפחתה
           </button>
+          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={addNiiReduction}>
+            <Plus className="w-4 h-4" />
+            {lang === 'he' ? 'מל״ל (סכום)' : 'NII (amount)'}
+          </button>
           <button type="button" className="btn-outline text-sm px-4 py-2" onClick={addDefendant}>
             <Plus className="w-4 h-4" />
             הוסף נתבע
@@ -933,6 +971,7 @@ const DamagesCalculator: React.FC = () => {
           defendantNet: totals.defendantNet,
           avgNet: totals.avgNet,
         }}
+        sheetReductions={sheet.reductions}
       />
 
       <div className="card-shell">
@@ -1129,9 +1168,9 @@ const DamagesCalculator: React.FC = () => {
           <div className="card-accent" />
           <div className="card-head">
             <div className="space-y-1">
-              <p className="text-sm font-semibold">הפחתות באחוזים</p>
+              <p className="text-sm font-semibold">הפחתות</p>
               <p className="text-xs text-slate-light">
-                סדר החישוב: קודם מפחיתים אשם תורם, אחר כך מפחיתים שאר ההפחתות (מצטבר במכפלה), ורק אז מחלקים אחריות בין נתבעים.
+                סדר החישוב: 1) אשם תורם (%) 2) מל״ל (סכום ₪) 3) סיכון/פגיעה בסיכויי החלמה (%) — אחר כך חלוקת נתבעים.
               </p>
             </div>
           </div>
@@ -1170,16 +1209,32 @@ const DamagesCalculator: React.FC = () => {
                     value={r.label}
                     onChange={(e) => updateReduction(r.id, { label: e.target.value })}
                   />
+                  {r.type === 'nii' && <span className="text-xs text-slate-light">(₪)</span>}
                 </div>
                 <div className="flex items-center gap-2 justify-between sm:justify-end">
                   <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      className="w-28 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
-                      value={r.percent}
-                      onChange={(e) => updateReduction(r.id, { percent: clampPercent(safeNumber(e.target.value)) })}
-                    />
-                    <span className="text-xs text-slate-light">%</span>
+                    {r.type === 'nii' ? (
+                      <>
+                        <input
+                          type="number"
+                          min={0}
+                          className="w-28 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                          value={r.value ?? 0}
+                          onChange={(e) => updateReduction(r.id, { value: Math.max(0, safeNumber(e.target.value)) })}
+                        />
+                        <span className="text-xs text-slate-light">₪</span>
+                      </>
+                    ) : (
+                      <>
+                        <input
+                          type="number"
+                          className="w-28 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                          value={r.percent}
+                          onChange={(e) => updateReduction(r.id, { percent: clampPercent(safeNumber(e.target.value)) })}
+                        />
+                        <span className="text-xs text-slate-light">%</span>
+                      </>
+                    )}
                   </div>
                   <button type="button" className="btn-outline text-[11px] px-3 py-1.5" onClick={() => removeReduction(r.id)}>
                     <Trash2 className="w-4 h-4" />

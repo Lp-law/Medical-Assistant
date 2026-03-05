@@ -18,7 +18,7 @@ export interface Question {
 
 export interface SheetLike {
   rows: Array<{ enabled: boolean; name: string }>;
-  reductions: Array<{ id: string; enabled: boolean; label: string; percent: number }>;
+  reductions: Array<{ id: string; enabled: boolean; label: string; percent: number; type?: 'percent' | 'nii'; value?: number }>;
   defendants: Array<{ id: string; enabled: boolean; name: string; percent: number }>;
   contributoryNegligencePercent: number;
 }
@@ -69,6 +69,18 @@ export function getGapQuestions(sheet: SheetLike): Question[] {
     });
   }
 
+  const hasNii = sheet.reductions.some((r) => r.enabled && (r as { type?: string }).type === 'nii');
+  if (!hasNii) {
+    questions.push({
+      id: 'nii_amount',
+      text_he: 'האם יש תגמולי מל״ל (NII) לקיזוז? אם כן, הזן סכום (₪).',
+      text_en: 'Is there NII (Bituach Leumi) to deduct? If so, enter amount (₪).',
+      type: 'number',
+      min: 0,
+      mapsTo: 'niiAmount',
+    });
+  }
+
   const hasMedicalRows = sheet.rows.some(
     (r) => r.enabled && /רפואי|הוצאות|medical|expenses/i.test(r.name)
   );
@@ -100,7 +112,7 @@ export interface QuestionnairePatch {
   contributoryNegligencePercent?: number;
   attorneyFeePercent?: number;
   plaintiffExpenses?: number;
-  reductions?: Array<{ id: string; enabled: boolean; label: string; percent: number }>;
+  reductions?: Array<{ id: string; enabled: boolean; label: string; percent: number; type?: 'percent' | 'nii'; value?: number }>;
   defendants?: Array<{ id: string; enabled: boolean; name: string; percent: number }>;
 }
 
@@ -136,6 +148,25 @@ export function buildProposal(
   }
   if ('plaintiff_expenses' in answers && !isSkipped(answers['plaintiff_expenses'])) {
     patch.plaintiffExpenses = Math.max(0, num('plaintiff_expenses'));
+  }
+  if ('nii_amount' in answers && !isSkipped(answers['nii_amount'])) {
+    const amount = Math.max(0, num('nii_amount'));
+    const existingNii = sheet.reductions.find((r) => (r as { type?: string }).type === 'nii');
+    const newNii = {
+      id: existingNii?.id ?? uid(),
+      enabled: true,
+      label: 'מל״ל',
+      percent: 0,
+      type: 'nii' as const,
+      value: amount,
+    };
+    if (existingNii) {
+      patch.reductions = sheet.reductions.map((r) =>
+        (r as { type?: string }).type === 'nii' ? { ...r, ...newNii } : r
+      );
+    } else {
+      patch.reductions = [...sheet.reductions, newNii];
+    }
   }
   if ('loss_of_chance' in answers && !isSkipped(answers['loss_of_chance']) && num('loss_of_chance') > 0) {
     const pct = Math.max(0, Math.min(100, num('loss_of_chance')));
