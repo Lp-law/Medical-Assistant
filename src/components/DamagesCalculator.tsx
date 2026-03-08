@@ -213,6 +213,7 @@ type ColumnId = 'claimant' | 'defendant' | 'average';
 
 const DamagesCalculator: React.FC = () => {
   const importRef = useRef<HTMLInputElement | null>(null);
+  const contribInputRef = useRef<HTMLInputElement | null>(null);
   const [storageSaveError, setStorageSaveError] = useState<string | null>(null);
   const [past, setPast] = useState<Sheet[]>([]);
   const [future, setFuture] = useState<Sheet[]>([]);
@@ -938,9 +939,16 @@ const DamagesCalculator: React.FC = () => {
             <Plus className="w-4 h-4" />
             {lang === 'he' ? 'מל״ל (סכום)' : 'NII (amount)'}
           </button>
+          <button
+            type="button"
+            className="btn-outline text-sm px-4 py-2"
+            onClick={() => { contribInputRef.current?.focus(); contribInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}
+          >
+            {t('contribNegPct', lang)}
+          </button>
           <button type="button" className="btn-outline text-sm px-4 py-2" onClick={addRiskReduction}>
             <Plus className="w-4 h-4" />
-            {lang === 'he' ? 'סיכון (%)' : 'Risk (%)'}
+            {t('lossOfChancePct', lang)}
           </button>
           <button type="button" className="btn-outline text-sm px-4 py-2" onClick={addDefendant}>
             <Plus className="w-4 h-4" />
@@ -1245,9 +1253,11 @@ const DamagesCalculator: React.FC = () => {
                 <span className="badge-warning">אשם תורם</span>
                 <span className="text-xs text-slate-light">(% מהסכום הכולל)</span>
               </div>
-              <div className="flex items-center gap-2 justify-between sm:justify-end">
+                <div className="flex items-center gap-2 justify-between sm:justify-end">
                 <div className="flex items-center gap-2">
                   <input
+                    ref={contribInputRef}
+                    id="contributory-negligence-percent"
                     type="number"
                     className="w-28 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
                     value={sheet.contributoryNegligencePercent}
