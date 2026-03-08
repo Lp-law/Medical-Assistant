@@ -12,6 +12,7 @@ import { documentsRouter } from './routes/documents';
 import { categoriesRouter } from './routes/categories';
 import { adminRouter } from './routes/admin';
 import { assistantRouter } from './routes/assistant';
+import { booksRouter } from './routes/books';
 
 const app = express();
 
@@ -71,6 +72,7 @@ app.use('/api/documents', requireDatabase, documentsRouter);
 app.use('/api/categories', requireDatabase, categoriesRouter);
 app.use('/api/admin', requireDatabase, adminRouter);
 app.use('/api/assistant', requireDatabase, assistantRouter);
+app.use('/api/books', requireDatabase, booksRouter);
 
 const port = config.port;
 app.listen(port, () => {
