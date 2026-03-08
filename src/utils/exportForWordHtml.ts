@@ -151,7 +151,7 @@ export function buildWordHtml(
     [L.contributoryNegligence, payload.sheet.contributoryNegligencePercent + '%', payload.sheet.contributoryNegligencePercent + '%', payload.sheet.contributoryNegligencePercent + '%'],
     [L.totalCompensationNet, formatCurrency(lang, after.plaintiff.afterAll), formatCurrency(lang, after.defendant.afterAll), formatCurrency(lang, after.avg.afterAll)],
     [L.attorneyFee, formatCurrency(lang, attorneyFeeAndGross.attorneyFeePlaintiff), formatCurrency(lang, attorneyFeeAndGross.attorneyFeeDefendant), formatCurrency(lang, attorneyFeeAndGross.attorneyFeeAvg)],
-    [L.plaintiffExpenses, formatCurrency(lang, attorneyFeeAndGross.plaintiffExpenses), '—', formatCurrency(lang, attorneyFeeAndGross.plaintiffExpenses)],
+    [L.plaintiffExpenses, formatCurrency(lang, attorneyFeeAndGross.plaintiffExpenses), formatCurrency(lang, attorneyFeeAndGross.plaintiffExpenses), formatCurrency(lang, attorneyFeeAndGross.plaintiffExpenses)],
     [L.grandTotalPayable, formatCurrency(lang, attorneyFeeAndGross.grossPlaintiff), formatCurrency(lang, attorneyFeeAndGross.grossDefendant), formatCurrency(lang, attorneyFeeAndGross.grossAvg)],
   ];
   html += '<thead><tr>';

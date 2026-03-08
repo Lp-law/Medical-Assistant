@@ -460,17 +460,18 @@ const DamagesCalculator: React.FC = () => {
     const compensationNetDefendant = after.defendant.afterAll;
     const compensationNetAvg = after.avg.afterAll;
     const attorneyFeePlaintiff = Math.round(compensationNetPlaintiff * pct);
+    const attorneyFeeDefendant = Math.round(compensationNetDefendant * pct);
     const attorneyFeeAvg = Math.round(compensationNetAvg * pct);
     return {
       attorneyFeePlaintiff,
-      attorneyFeeDefendant: 0,
+      attorneyFeeDefendant,
       attorneyFeeAvg,
       plaintiffExpenses: expenses,
       compensationNetPlaintiff,
       compensationNetDefendant,
       compensationNetAvg,
       grossPlaintiff: compensationNetPlaintiff + attorneyFeePlaintiff + expenses,
-      grossDefendant: compensationNetDefendant,
+      grossDefendant: compensationNetDefendant + attorneyFeeDefendant + expenses,
       grossAvg: compensationNetAvg + attorneyFeeAvg + expenses,
     };
   }, [sheet.attorneyFeePercent, sheet.plaintiffExpenses, after.plaintiff.afterAll, after.defendant.afterAll, after.avg.afterAll]);
@@ -1195,14 +1196,14 @@ const DamagesCalculator: React.FC = () => {
                 <tr className="bg-pearl/30">
                   <td className="px-3 py-3 font-semibold text-slate" colSpan={3}>{t('plaintiffSolicitorFee', lang)} ({sheet.attorneyFeePercent}%)</td>
                   {showColumn('claimant') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.attorneyFeePlaintiff)}</td>}
-                  {showColumn('defendant') && <td className="px-3 py-3 font-semibold text-slate">—</td>}
+                  {showColumn('defendant') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.attorneyFeeDefendant)}</td>}
                   {showColumn('average') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.attorneyFeeAvg)}</td>}
                   <td className="px-3 py-3" />
                 </tr>
                 <tr className="bg-pearl/30">
                   <td className="px-3 py-3 font-semibold text-slate" colSpan={3}>{t('plaintiffExpenses', lang)}</td>
                   {showColumn('claimant') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.plaintiffExpenses)}</td>}
-                  {showColumn('defendant') && <td className="px-3 py-3 font-semibold text-slate">—</td>}
+                  {showColumn('defendant') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.plaintiffExpenses)}</td>}
                   {showColumn('average') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.plaintiffExpenses)}</td>}
                   <td className="px-3 py-3" />
                 </tr>
