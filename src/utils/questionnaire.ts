@@ -3,6 +3,8 @@
  * No LLM; mapsTo defines how answers become sheet patches.
  */
 
+import { getBuiltInTemplates } from './damagesTemplates';
+
 export type QuestionType = 'number' | 'percent' | 'select' | 'text';
 
 export interface Question {
@@ -25,13 +27,23 @@ export interface SheetLike {
 
 const uid = (): string => Math.random().toString(16).slice(2) + Date.now().toString(16);
 
-/** Deterministic: which questions to show based on current sheet state. */
+/** Deterministic: which questions to show. Always includes damage type, NII, loss of chance, and other gaps. */
 export function getGapQuestions(sheet: SheetLike): Question[] {
   const questions: Question[] = [];
   const activeDefendants = sheet.defendants.filter((d) => d.enabled);
-  const hasLossOfChance = sheet.reductions.some(
-    (r) => r.enabled && /סיכוי|חלמה|loss|chance/i.test(r.label)
-  );
+  const builtIns = getBuiltInTemplates();
+
+  questions.push({
+    id: 'damage_type',
+    text_he: 'סוג נזק – בחר תבנית לטעינה (או "אחר" להשאיר את המחשבון כפי שהוא).',
+    text_en: 'Damage type – choose a template to load (or "Other" to keep current sheet).',
+    type: 'select',
+    mapsTo: 'loadTemplateId',
+    options: [
+      { value: '', label_he: 'אחר (לא לטעון תבנית)', label_en: 'Other (do not load template)' },
+      ...builtIns.map((t) => ({ value: t.id, label_he: t.name, label_en: t.name })),
+    ],
+  });
 
   if (sheet.contributoryNegligencePercent === 0) {
     questions.push({
@@ -45,17 +57,15 @@ export function getGapQuestions(sheet: SheetLike): Question[] {
     });
   }
 
-  if (!hasLossOfChance) {
-    questions.push({
-      id: 'loss_of_chance',
-      text_he: 'האם להגדיר הפחתה בגין פגיעה בסיכויי החלמה? אם כן, הזן אחוז (0–100).',
-      text_en: 'Add a reduction for loss of chance? If so, enter percent (0–100).',
-      type: 'percent',
-      min: 0,
-      max: 100,
-      mapsTo: 'addLossOfChancePercent',
-    });
-  }
+  questions.push({
+    id: 'loss_of_chance',
+    text_he: 'פגיעה בסיכויי החלמה (%) – הזן אחוז (0–100) או דלג.',
+    text_en: 'Loss of chance (%) – enter percent (0–100) or skip.',
+    type: 'percent',
+    min: 0,
+    max: 100,
+    mapsTo: 'addLossOfChancePercent',
+  });
 
   if (activeDefendants.length <= 1) {
     questions.push({
@@ -69,17 +79,14 @@ export function getGapQuestions(sheet: SheetLike): Question[] {
     });
   }
 
-  const hasNii = sheet.reductions.some((r) => r.enabled && (r as { type?: string }).type === 'nii');
-  if (!hasNii) {
-    questions.push({
-      id: 'nii_amount',
-      text_he: 'האם יש תגמולי מל״ל (NII) לקיזוז? אם כן, הזן סכום (₪).',
-      text_en: 'Is there NII (Bituach Leumi) to deduct? If so, enter amount (₪).',
-      type: 'number',
-      min: 0,
-      mapsTo: 'niiAmount',
-    });
-  }
+  questions.push({
+    id: 'nii_amount',
+    text_he: 'הפחתת מל״ל (סכום ₪) – הזן סכום לקיזוז או 0.',
+    text_en: 'NII deduction (amount ₪) – enter amount to deduct or 0.',
+    type: 'number',
+    min: 0,
+    mapsTo: 'niiAmount',
+  });
 
   const hasMedicalRows = sheet.rows.some(
     (r) => r.enabled && /רפואי|הוצאות|medical|expenses/i.test(r.name)
@@ -109,6 +116,7 @@ export function getGapQuestions(sheet: SheetLike): Question[] {
 }
 
 export interface QuestionnairePatch {
+  loadTemplateId?: string;
   contributoryNegligencePercent?: number;
   attorneyFeePercent?: number;
   plaintiffExpenses?: number;
@@ -139,7 +147,15 @@ export function buildProposal(
     const n = Number(v);
     return Number.isFinite(n) ? n : 0;
   };
+  const str = (key: string): string => {
+    const v = answers[key];
+    if (isSkipped(v) || v == null) return '';
+    return String(v).trim();
+  };
 
+  if ('damage_type' in answers && !isSkipped(answers['damage_type']) && str('damage_type')) {
+    patch.loadTemplateId = str('damage_type');
+  }
   if ('contrib_neg' in answers && !isSkipped(answers['contrib_neg'])) {
     patch.contributoryNegligencePercent = Math.max(0, Math.min(100, num('contrib_neg')));
   }
@@ -168,18 +184,35 @@ export function buildProposal(
       patch.reductions = [...sheet.reductions, newNii];
     }
   }
-  if ('loss_of_chance' in answers && !isSkipped(answers['loss_of_chance']) && num('loss_of_chance') > 0) {
+  if ('loss_of_chance' in answers && !isSkipped(answers['loss_of_chance'])) {
     const pct = Math.max(0, Math.min(100, num('loss_of_chance')));
+    const existingRisk = sheet.reductions.find(
+      (r) => (r as { type?: string }).type === 'risk' || /סיכוי|חלמה|chance/i.test(r.label)
+    );
+    const label = sheet.reductions.some((r) => /סיכוי|חלמה/i.test(r.label))
+      ? 'פגיעה בסיכויי החלמה (%)'
+      : 'Loss of chance (%)';
     const newRed = {
-      id: uid(),
+      id: existingRisk?.id ?? uid(),
       enabled: true,
-      label: sheet.reductions.some((r) => /סיכוי|חלמה/i.test(r.label))
-        ? 'פגיעה בסיכויי החלמה (%)'
-        : 'Loss of chance (%)',
+      label,
       percent: pct,
       type: 'risk' as const,
     };
-    patch.reductions = [...sheet.reductions, newRed];
+    if (existingRisk) {
+      patch.reductions = patch.reductions ?? [...sheet.reductions];
+      const idx = patch.reductions.findIndex(
+        (r) => (r as { type?: string }).type === 'risk' || /סיכוי|חלמה|chance/i.test(r.label)
+      );
+      if (idx >= 0) {
+        patch.reductions = patch.reductions.map((r, i) => (i === idx ? { ...r, ...newRed } : r));
+      } else {
+        patch.reductions = [...patch.reductions, newRed];
+      }
+    } else {
+      patch.reductions = patch.reductions ?? [...sheet.reductions];
+      patch.reductions = [...patch.reductions, newRed];
+    }
   }
   if ('defendant_count' in answers && !isSkipped(answers['defendant_count'])) {
     const count = Math.max(1, Math.min(10, Math.round(num('defendant_count'))));

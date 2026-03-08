@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, FileQuestion, Check, AlertCircle, SkipForward } from 'lucide-react';
 import { getGapQuestions, buildProposal, SKIP_SENTINEL, type Question, type QuestionnairePatch, type SheetLike } from '../utils/questionnaire';
+import { getBuiltInTemplates } from '../utils/damagesTemplates';
 import { t, type Lang } from '../utils/calcI18n';
 
 type Props = {
@@ -86,6 +87,18 @@ const QuestionnaireModal: React.FC<Props> = ({ lang, sheet, onApplyPatch, onClos
                       </div>
                       {isSkipped(q.id) ? (
                         <p className="text-xs text-slate italic">{lang === 'he' ? '(דולג)' : '(Skipped)'}</p>
+                      ) : q.type === 'select' && q.options ? (
+                        <select
+                          value={answers[q.id] === SKIP_SENTINEL ? '' : String(answers[q.id] ?? '')}
+                          onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
+                          className="w-full rounded-card border border-pearl bg-white p-2 text-sm"
+                        >
+                          {q.options.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {lang === 'he' ? opt.label_he : opt.label_en}
+                            </option>
+                          ))}
+                        </select>
                       ) : q.type === 'percent' || q.type === 'number' ? (
                         <input
                           type="number"
@@ -110,6 +123,9 @@ const QuestionnaireModal: React.FC<Props> = ({ lang, sheet, onApplyPatch, onClos
                 <div className="space-y-2">
                   <p className="text-sm font-semibold text-navy">{t('previewChanges', lang)}</p>
                   <ul className="text-sm text-slate list-disc list-inside">
+                    {preview.loadTemplateId && (
+                      <li>{t('templateToLoad', lang)}: {getBuiltInTemplates().find((tpl) => tpl.id === preview.loadTemplateId)?.name ?? preview.loadTemplateId}</li>
+                    )}
                     {preview.contributoryNegligencePercent !== undefined && (
                       <li>{t('contribNegPct', lang)}: {preview.contributoryNegligencePercent}%</li>
                     )}
@@ -124,6 +140,9 @@ const QuestionnaireModal: React.FC<Props> = ({ lang, sheet, onApplyPatch, onClos
                     )}
                     {preview.reductions?.some((r) => (r as { type?: string }).type === 'nii') && (
                       <li>{t('niiLabel', lang)}: ₪ {(preview.reductions.find((r) => (r as { type?: string }).type === 'nii') as { value?: number })?.value ?? 0}</li>
+                    )}
+                    {preview.reductions?.some((r) => (r as { type?: string }).type === 'risk') && (
+                      <li>{t('lossOfChancePct', lang)}: {(preview.reductions.find((r) => (r as { type?: string }).type === 'risk') as { percent?: number })?.percent ?? 0}%</li>
                     )}
                     {preview.defendants && (
                       <li>{t('defendantsSection', lang)}: {preview.defendants.length} {t('defendantName', lang)}s</li>

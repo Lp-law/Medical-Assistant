@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Plus, Trash2, Upload, RotateCcw, Undo2, Redo2, LayoutTemplate, FileText, FileDown, X, Save } from 'lucide-react';
 import { storageGetItem, storageSetItem } from '../utils/storageGuard';
 import { getBuiltInTemplates, getSavedTemplates, saveTemplate, deleteSavedTemplate, cloneSheetWithNewIds, type TemplateItem } from '../utils/damagesTemplates';
+import type { QuestionnairePatch } from '../utils/questionnaire';
 import { exportDamagesToDocx } from '../utils/exportDamagesDocx';
 import ExportForWordModal from './ExportForWordModal';
 import type { ExportPayload } from '../utils/exportForWordHtml';
@@ -858,17 +859,49 @@ const DamagesCalculator: React.FC = () => {
   );
 
   const applyQuestionnairePatch = useCallback(
-    (patch: {
-      contributoryNegligencePercent?: number;
-      attorneyFeePercent?: number;
-      plaintiffExpenses?: number;
-      reductions?: typeof sheet.reductions;
-      defendants?: typeof sheet.defendants;
-    }) => {
-      setSheetWithHistory((prev) => ({ ...prev, ...patch }));
+    (patch: QuestionnairePatch) => {
+      const { loadTemplateId, ...rest } = patch;
+      if (loadTemplateId) {
+        const template = getBuiltInTemplates().find((t) => t.id === loadTemplateId);
+        if (template) {
+          setSheetWithHistory((prev) => {
+            const base = cloneSheetWithNewIds(template.sheet);
+            const mergeReductions = (
+              baseRed: typeof base.reductions,
+              patchRed: typeof rest.reductions
+            ): typeof base.reductions => {
+              if (!patchRed?.length) return baseRed;
+              let result = [...baseRed];
+              const isNii = (x: { type?: string; label?: string }) => (x as { type?: string }).type === 'nii' || /מל["']?ל/i.test((x as { label?: string }).label ?? '');
+              const isRisk = (x: { type?: string; label?: string }) => (x as { type?: string }).type === 'risk' || /סיכוי|חלמה|chance/i.test((x as { label?: string }).label ?? '');
+              for (const r of patchRed) {
+                const typed = r as { type?: string; id?: string; enabled?: boolean; label?: string; percent?: number; value?: number };
+                if (typed.type === 'nii') {
+                  const i = result.findIndex((x) => isNii(x as { type?: string; label?: string }));
+                  if (i >= 0) result[i] = { ...result[i], ...typed };
+                  else result.push({ ...r, id: r.id });
+                } else if (typed.type === 'risk') {
+                  const i = result.findIndex((x) => isRisk(x as { type?: string; label?: string }));
+                  if (i >= 0) result[i] = { ...result[i], ...typed };
+                  else result.push({ ...r, id: r.id });
+                }
+              }
+              return result;
+            };
+            return {
+              ...base,
+              contributoryNegligencePercent: rest.contributoryNegligencePercent ?? base.contributoryNegligencePercent,
+              attorneyFeePercent: rest.attorneyFeePercent ?? base.attorneyFeePercent,
+              plaintiffExpenses: rest.plaintiffExpenses ?? base.plaintiffExpenses,
+              reductions: mergeReductions(base.reductions, rest.reductions),
+              defendants: rest.defendants ?? base.defendants,
+            };
+          });
+          return;
+        }
+      }
+      setSheetWithHistory((prev) => ({ ...prev, ...rest }));
     },
-    // sheet only used for typing
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [setSheetWithHistory]
   );
 
