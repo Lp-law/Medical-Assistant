@@ -1072,7 +1072,7 @@ const DamagesCalculator: React.FC = () => {
             </label>
           </div>
           <div className="overflow-auto">
-            <table className="min-w-[920px] w-full text-sm border-separate border-spacing-0">
+            <table className={`w-full text-sm border-separate border-spacing-0 ${viewMode === 'defendantOnly' ? 'min-w-[520px]' : 'min-w-[920px]'}`}>
               <thead>
                 <tr className="text-slate-light">
                   <th className="text-right px-3 py-2 border-b border-pearl">כלול</th>
@@ -1195,25 +1195,25 @@ const DamagesCalculator: React.FC = () => {
                 </tr>
                 <tr className="bg-pearl/30">
                   <td className="px-3 py-3 font-semibold text-slate" colSpan={3}>{t('plaintiffSolicitorFee', lang)} ({sheet.attorneyFeePercent}%)</td>
-                  {showColumn('claimant') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.attorneyFeePlaintiff)}</td>}
-                  {showColumn('defendant') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.attorneyFeeDefendant)}</td>}
-                  {showColumn('average') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.attorneyFeeAvg)}</td>}
+                  {showColumn('claimant') && <td className="px-3 py-3 font-semibold text-slate text-right">{formatILS(Number(attorneyFeeAndGross.attorneyFeePlaintiff) || 0)}</td>}
+                  {showColumn('defendant') && <td className="px-3 py-3 font-semibold text-slate text-right">{formatILS(Number(attorneyFeeAndGross.attorneyFeeDefendant) || 0)}</td>}
+                  {showColumn('average') && <td className="px-3 py-3 font-semibold text-slate text-right">{formatILS(Number(attorneyFeeAndGross.attorneyFeeAvg) || 0)}</td>}
                   <td className="px-3 py-3" />
                 </tr>
                 <tr className="bg-pearl/30">
                   <td className="px-3 py-3 font-semibold text-slate" colSpan={3}>{t('plaintiffExpenses', lang)}</td>
-                  {showColumn('claimant') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.plaintiffExpenses)}</td>}
-                  {showColumn('defendant') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.plaintiffExpenses)}</td>}
-                  {showColumn('average') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.plaintiffExpenses)}</td>}
+                  {showColumn('claimant') && <td className="px-3 py-3 font-semibold text-slate text-right">{formatILS(Number(attorneyFeeAndGross.plaintiffExpenses) || 0)}</td>}
+                  {showColumn('defendant') && <td className="px-3 py-3 font-semibold text-slate text-right">{formatILS(Number(attorneyFeeAndGross.plaintiffExpenses) || 0)}</td>}
+                  {showColumn('average') && <td className="px-3 py-3 font-semibold text-slate text-right">{formatILS(Number(attorneyFeeAndGross.plaintiffExpenses) || 0)}</td>}
                   <td className="px-3 py-3" />
                 </tr>
                 <tr>
                   <td className="px-3 py-3" />
                   <td className="px-3 py-3" />
                   <td className="px-3 py-3 font-bold bg-gold/20">{t('grandTotalPayable', lang)}</td>
-                  {showColumn('claimant') && <td className="px-3 py-3 font-bold bg-gold/20">{formatILS(attorneyFeeAndGross.grossPlaintiff)}</td>}
-                  {showColumn('defendant') && <td className="px-3 py-3 font-bold bg-gold/20">{formatILS(attorneyFeeAndGross.grossDefendant)}</td>}
-                  {showColumn('average') && <td className="px-3 py-3 font-bold bg-gold/20">{formatILS(attorneyFeeAndGross.grossAvg)}</td>}
+                  {showColumn('claimant') && <td className="px-3 py-3 font-bold bg-gold/20 text-right">{formatILS(Number(attorneyFeeAndGross.grossPlaintiff) || 0)}</td>}
+                  {showColumn('defendant') && <td className="px-3 py-3 font-bold bg-gold/20 text-right">{formatILS(Number(attorneyFeeAndGross.grossDefendant) || 0)}</td>}
+                  {showColumn('average') && <td className="px-3 py-3 font-bold bg-gold/20 text-right">{formatILS(Number(attorneyFeeAndGross.grossAvg) || 0)}</td>}
                   <td className="px-3 py-3" />
                 </tr>
               </tfoot>
