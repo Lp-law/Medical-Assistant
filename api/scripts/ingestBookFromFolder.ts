@@ -16,11 +16,25 @@ const BOOK_NAME = 'תחשיבי נזק';
 const MAX_CONTENT_LENGTH = 100_000;
 const MAX_SUMMARY_LENGTH = 500;
 
-function extractTextFromPdf(buffer: Buffer): Promise<string> {
-  return pdf(buffer).then((data: { text?: string }) => {
-    if (!data?.text) return '';
-    return (data.text as string).replace(/\s+/g, ' ').trim();
-  });
+const MIN_CHARS_PER_PAGE_FOR_OCR_FALLBACK = 80;
+
+async function extractTextFromPdf(buffer: Buffer): Promise<string> {
+  const data = await pdf(buffer);
+  const raw = (data?.text ?? '') as string;
+  const text = raw.replace(/\s+/g, ' ').trim();
+  const numPages = (data?.numpages as number) ?? 1;
+  if (text.length < numPages * MIN_CHARS_PER_PAGE_FOR_OCR_FALLBACK) {
+    try {
+      const { analyzeWithAzureOcr } = await import('../src/services/ocrClient');
+      const ocrText = await analyzeWithAzureOcr(buffer);
+      if (ocrText && ocrText.trim().length > text.length) {
+        return ocrText.replace(/\s+/g, ' ').trim();
+      }
+    } catch {
+      // Azure OCR not configured or failed; keep pdf-parse result
+    }
+  }
+  return text;
 }
 
 async function main() {

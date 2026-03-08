@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { requireAuth } from '../middleware/auth';
 import { prisma } from '../services/prisma';
-import { generateSearchQueries } from '../services/openAIClient';
+import { generateSearchQueries, generateAssistantAnswer } from '../services/openAIClient';
 
 const router = Router();
 router.use(requireAuth);
@@ -79,6 +79,8 @@ type AssistantDocumentHit = {
   source: string;
   attachmentUrl: string | null;
   createdAt: string;
+  bookName: string | null;
+  bookChapter: string | null;
 };
 
 const searchDocumentsByQuery = async (
@@ -99,6 +101,8 @@ const searchDocumentsByQuery = async (
         "d"."source",
         "d"."attachmentUrl",
         "d"."createdAt",
+        "d"."bookName",
+        "d"."bookChapter",
         "c"."name" AS "category_name"
       FROM "Document" "d"
       JOIN "Category" "c" ON "c"."id" = "d"."categoryId"
@@ -124,6 +128,8 @@ const searchDocumentsByQuery = async (
     source: String(row.source ?? ''),
     attachmentUrl: row.attachmentUrl ? String(row.attachmentUrl) : null,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt ?? ''),
+    bookName: row.bookName != null ? String(row.bookName) : null,
+    bookChapter: row.bookChapter != null ? String(row.bookChapter) : null,
   }));
 };
 
@@ -170,6 +176,65 @@ router.post('/search', assistantSearchLimiter, async (req, res) => {
     }));
 
   res.json({
+    queries: effectiveQueries,
+    documents,
+  });
+});
+
+// תשובה מבוססת RAG: חיפוש במאגר + יצירת תשובה מלל חופשי מהספר עם ציטוט פרק
+router.post('/answer', assistantSearchLimiter, async (req, res) => {
+  const parsed = bodySchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: 'invalid_body', details: parsed.error.errors });
+    return;
+  }
+
+  const limit = Math.min(parsed.data.limit ?? 10, 20);
+  const question = parsed.data.question.trim();
+  const categoryName = parsed.data.categoryName?.trim() || undefined;
+
+  const queries = await generateSearchQueries(question);
+  const quotedPhrases = extractQuotedPhrases(question);
+  const effectiveQueries = [
+    ...quotedPhrases,
+    ...(queries.length ? queries : [question]),
+    unwrapQuotedPhrase(question),
+  ]
+    .map((q) => q.trim())
+    .filter(Boolean);
+
+  const hitCounts = new Map<string, { hit: AssistantDocumentHit; score: number }>();
+  for (const q of effectiveQueries.slice(0, 5)) {
+    const hits = await searchDocumentsByQuery(q, limit, categoryName);
+    for (const hit of hits) {
+      const existing = hitCounts.get(hit.id);
+      if (existing) {
+        existing.score += 1;
+      } else {
+        hitCounts.set(hit.id, { hit, score: 1 });
+      }
+    }
+  }
+
+  const documents = Array.from(hitCounts.values())
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((x) => ({
+      ...x.hit,
+      attachmentUrl: x.hit.attachmentUrl ? buildAttachmentDownloadUrl(req, x.hit.id) : null,
+    }));
+
+  const contextBlocks = documents.map((d) => ({
+    title: d.title,
+    bookName: d.bookName ?? undefined,
+    bookChapter: d.bookChapter ?? undefined,
+    contentSnippet: d.contentSnippet,
+  }));
+
+  const answer = await generateAssistantAnswer(question, contextBlocks);
+
+  res.json({
+    answer,
     queries: effectiveQueries,
     documents,
   });

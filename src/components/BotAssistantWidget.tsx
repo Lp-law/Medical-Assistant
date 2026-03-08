@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Bot, Send, X, Search, ExternalLink } from 'lucide-react';
-import { assistantSearch, AssistantDocumentHit } from '../services/assistantApi';
+import { assistantAnswer, AssistantDocumentHit } from '../services/assistantApi';
 import { openAttachment } from '../utils/openAttachment';
 
 type Props = {
@@ -129,11 +129,11 @@ const BotAssistantWidget: React.FC<Props> = ({ mode = 'documents', onOpenDocumen
         { id: `${Date.now()}-u`, role: 'user', text: q, createdAt: now },
       ]);
 
-      const res = await assistantSearch(q, { limit, categoryName });
+      const res = await assistantAnswer(q, { limit, categoryName });
       const assistantTurn: ChatTurn = {
         id: `${Date.now()}-a`,
         role: 'assistant',
-        text: 'הנה התוצאות שמצאתי במאגר הידע. אפשר ללחוץ על שאילתה כדי לפתוח במסך מסמכים.',
+        text: res.answer ?? 'לא התקבלה תשובה. הנה המסמכים הרלוונטיים.',
         createdAt: new Date().toISOString(),
         queries: res.queries ?? [],
         documents: res.documents ?? [],
@@ -395,7 +395,9 @@ const BotAssistantWidget: React.FC<Props> = ({ mode = 'documents', onOpenDocumen
                                               {d.title}
                                             </button>
                                             <p className="text-xs text-slate mt-1">
-                                              {d.categoryName} • {formatDate(d.createdAt)} • {d.source}
+                                              {[d.bookChapter, d.categoryName, formatDate(d.createdAt), d.source]
+                                                .filter(Boolean)
+                                                .join(' • ')}
                                             </p>
                                           </div>
                                           <div className="flex flex-col items-end gap-2">

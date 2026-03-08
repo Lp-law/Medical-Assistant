@@ -119,3 +119,55 @@ export const generateSearchQueries = async (question: string): Promise<string[]>
   }
 };
 
+// --- עוזר ספר "תחשיבי נזק": תשובות רק מתוך הספר + ציטוט פרק ---
+
+export const ASSISTANT_SYSTEM_PROMPT = `אתה עוזר מומחה לספר "תחשיבי נזק". תפקידך היחיד: לענות על שאלות המשתמש בהתבסס אך ורק על הקטעים מהספר שסופקו לך.
+
+הנחיות מחייבות:
+1. ענה רק על סמך המידע שמופיע בקטעים מהספר. אל תמציא מידע ואל תסתמך על ידע חיצוני.
+2. העדף מלל חופשי מתוך הספר – צטט או נסח מחדש בסגנון הספר ככל האפשר.
+3. בכל תשובה שתכתוב, ציין במפורש את מקור המידע: שם הפרק (למשל: "פרק 3 - היוון", "פרק 1 - מהו תחשיב נזק"). אם בקטע מופיע מספר עמוד – ציין גם אותו.
+4. אם התשובה לשאלה לא נמצאת בקטעים שסופקו, ענה בקצרה: "המידע לא מופיע בקטעים מהספר שסופקו." אל תנסה לנחש או להשלים.
+5. ענה תמיד בעברית, בבהירות ובקצרה אך במלאות ככל שנדרש.
+6. אל תוסיף דעות אישיות, המלצות משפטיות או ייעוץ – רק סיכום/ציטוט מהספר.`;
+
+export interface AssistantContextBlock {
+  title: string;
+  bookName?: string | null;
+  bookChapter?: string | null;
+  contentSnippet: string;
+}
+
+export const generateAssistantAnswer = async (
+  question: string,
+  contextBlocks: AssistantContextBlock[],
+): Promise<string> => {
+  if (!openAIClient || !deployment) {
+    if (contextBlocks.length === 0) {
+      return 'המידע לא מופיע בקטעים מהספר שסופקו.';
+    }
+    return (
+      contextBlocks[0].contentSnippet.slice(0, 1500) +
+      (contextBlocks[0].bookChapter ? `\n[מקור: ${contextBlocks[0].bookChapter}]` : '')
+    );
+  }
+
+  const contextText = contextBlocks
+    .map((b) => {
+      const header = [b.bookName, b.bookChapter, b.title].filter(Boolean).join(' — ');
+      return header ? `[${header}]\n${b.contentSnippet}` : b.contentSnippet;
+    })
+    .join('\n\n---\n\n');
+
+  const userMessage =
+    `קטעים רלוונטיים מהספר:\n\n${contextText.slice(0, 28000)}\n\n---\n\nשאלת המשתמש: ${question.trim().slice(0, 2000)}\n\nענה אך ורק על סמך הקטעים למעלה, ציין פרק (ועמוד אם רלוונטי).`.trim();
+
+  const response = await openAIClient.getChatCompletions(deployment, [
+    { role: 'system', content: ASSISTANT_SYSTEM_PROMPT },
+    { role: 'user', content: userMessage },
+  ]);
+
+  const answer = response.choices?.[0]?.message?.content?.trim() ?? '';
+  return answer || 'לא התקבלה תשובה מהמערכת.';
+};
+
