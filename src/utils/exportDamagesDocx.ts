@@ -1,6 +1,7 @@
 import { Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun } from 'docx';
 import type { ExportLang } from './exportForWordI18n';
 import { getLabels, formatNumber } from './exportForWordI18n';
+import { getContribPctFromSheet, type ReductionForNet } from './netCalc';
 
 /** Normalize Hebrew for lookup: trim, collapse spaces, remove geresh (U+05F3) and optional quote. */
 function normHe(s: string): string {
@@ -55,7 +56,7 @@ type Sheet = {
   title: string;
   rows: Array<{ name: string; kind: string; plaintiff: number; defendant: number; enabled: boolean }>;
   contributoryNegligencePercent: number;
-  reductions: Array<{ label: string; percent: number; enabled: boolean }>;
+  reductions: Array<{ label: string; percent: number; enabled: boolean; type?: string }>;
   defendants: Array<{ name: string; percent: number }>;
   attorneyFeePercent: number;
   plaintiffExpenses: number;
@@ -159,9 +160,10 @@ export async function exportDamagesToDocx(
     visuallyRightToLeft: exportLang === 'he',
   });
 
+  const effectiveContrib = getContribPctFromSheet({ contributoryNegligencePercent: sheet.contributoryNegligencePercent, reductions: sheet.reductions as ReductionForNet[] });
   const summaryLines = [
     `${L.titleLabel}: ${docTitle}`,
-    `${L.contributoryNegligence}: ${sheet.contributoryNegligencePercent}%`,
+    `${L.contributoryNegligence}: ${effectiveContrib}%`,
     `${L.attorneyFeePct}: ${sheet.attorneyFeePercent}%`,
     `${L.plaintiffExpenses}: ${currencySymbol}${fmt(sheet.plaintiffExpenses)}`,
     `${L.resultClaimant}: ${currencySymbol}${fmt(after.plaintiff.afterAll)}`,

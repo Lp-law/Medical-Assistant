@@ -10,6 +10,7 @@ import {
   formatPercent,
   isRtl,
 } from './exportForWordI18n';
+import { getContribPctFromSheet, type SheetForNet } from './netCalc';
 
 export type ExportPayload = {
   sheet: {
@@ -23,7 +24,7 @@ export type ExportPayload = {
       defendant: number;
     }>;
     contributoryNegligencePercent: number;
-    reductions: Array<{ id: string; enabled: boolean; label: string; percent: number }>;
+    reductions: Array<{ id: string; enabled: boolean; label: string; percent: number; type?: string }>;
     defendants: Array<{ id: string; enabled: boolean; name: string; percent: number }>;
     attorneyFeePercent: number;
     plaintiffExpenses: number;
@@ -148,7 +149,7 @@ export function buildWordHtml(
     [L.subtotalHeads, formatCurrency(lang, totals.plaintiffAdd), formatCurrency(lang, totals.defendantAdd), formatCurrency(lang, totals.avgAdd)],
     [L.deductions, formatCurrency(lang, totals.plaintiffDeduct), formatCurrency(lang, totals.defendantDeduct), formatCurrency(lang, totals.avgDeduct)],
     [L.netTotal, formatCurrency(lang, totals.plaintiffNet), formatCurrency(lang, totals.defendantNet), formatCurrency(lang, totals.avgNet)],
-    [L.contributoryNegligence, payload.sheet.contributoryNegligencePercent + '%', payload.sheet.contributoryNegligencePercent + '%', payload.sheet.contributoryNegligencePercent + '%'],
+    [L.contributoryNegligence, getContribPctFromSheet(payload.sheet as SheetForNet) + '%', getContribPctFromSheet(payload.sheet as SheetForNet) + '%', getContribPctFromSheet(payload.sheet as SheetForNet) + '%'],
     [L.totalCompensationNet, formatCurrency(lang, after.plaintiff.afterAll), formatCurrency(lang, after.defendant.afterAll), formatCurrency(lang, after.avg.afterAll)],
     [L.attorneyFee, formatCurrency(lang, attorneyFeeAndGross.attorneyFeePlaintiff), formatCurrency(lang, attorneyFeeAndGross.attorneyFeeDefendant), formatCurrency(lang, attorneyFeeAndGross.attorneyFeeAvg)],
     [L.plaintiffExpenses, formatCurrency(lang, attorneyFeeAndGross.plaintiffExpenses), formatCurrency(lang, attorneyFeeAndGross.plaintiffExpenses), formatCurrency(lang, attorneyFeeAndGross.plaintiffExpenses)],

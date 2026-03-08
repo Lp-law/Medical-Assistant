@@ -7,7 +7,7 @@ type Props = {
   lang: Lang;
   baseNets: { plaintiffNet: number; defendantNet: number; avgNet: number };
   /** Sheet reductions (percent and/or type 'nii' with value) for NII + risk in scenarios */
-  sheetReductions: Array<{ label?: string; percent?: number; enabled: boolean; type?: 'percent' | 'nii' | 'risk'; value?: number }>;
+  sheetReductions: Array<{ label?: string; percent?: number; enabled: boolean; type?: 'percent' | 'contrib' | 'nii' | 'risk'; value?: number }>;
 };
 
 const SCENARIO_KEYS: Array<'conservative' | 'reasonable' | 'aggressive'> = ['conservative', 'reasonable', 'aggressive'];

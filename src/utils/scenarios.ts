@@ -31,7 +31,7 @@ export interface ScenarioResult {
 /** Reductions from sheet (id optional for netCalc). */
 export type ScenarioSheetReductions = Array<{
   enabled: boolean;
-  type?: 'percent' | 'nii' | 'risk';
+  type?: 'percent' | 'contrib' | 'nii' | 'risk';
   percent?: number;
   value?: number;
   label?: string;

@@ -7,7 +7,7 @@ import { exportDamagesToDocx } from '../utils/exportDamagesDocx';
 import ExportForWordModal from './ExportForWordModal';
 import type { ExportPayload } from '../utils/exportForWordHtml';
 import { useLang } from '../context/LangContext';
-import { calcNetTotals } from '../utils/netCalc';
+import { calcNetTotals, getContribPctFromSheet } from '../utils/netCalc';
 import { t } from '../utils/calcI18n';
 import SanityCheckPanel from './SanityCheckPanel';
 import QuestionnaireModal from './QuestionnaireModal';
@@ -29,8 +29,8 @@ type Reduction = {
   enabled: boolean;
   label: string;
   percent: number; // 0-100
-  /** 'nii' = תגמולי מל"ל (amount in value); 'risk' = סיכון/פגיעה בסיכויי החלמה (%); default = percent */
-  type?: 'percent' | 'nii' | 'risk';
+  /** 'contrib' = אשם תורם (%); 'nii' = תגמולי מל"ל (amount); 'risk' = פגיעה בסיכויי החלמה (%); default = percent */
+  type?: 'percent' | 'contrib' | 'nii' | 'risk';
   /** For type 'nii': amount in ₪ to deduct after contrib */
   value?: number;
 };
@@ -224,6 +224,7 @@ const DamagesCalculator: React.FC = () => {
   const [newTemplateColor, setNewTemplateColor] = useState('#0ea5e9');
   const [savedTemplates, setSavedTemplates] = useState<TemplateItem[]>(() => getSavedTemplates());
   const [viewMode, setViewMode] = useState<ViewMode>('full');
+  const [showDashboard, setShowDashboard] = useState<boolean>(() => !storageGetItem(STORAGE_KEY_V3));
 
   const pastRef = useRef<Sheet[]>([]);
   const futureRef = useRef<Sheet[]>([]);
@@ -299,7 +300,7 @@ const DamagesCalculator: React.FC = () => {
                 enabled: Boolean(r.enabled ?? true),
                 label: String(r.label ?? ''),
                 percent: clampPercent(safeNumber(r.percent)),
-                type: r.type === 'nii' ? 'nii' : r.type === 'risk' ? 'risk' : undefined,
+                type: r.type === 'nii' ? 'nii' : r.type === 'risk' ? 'risk' : r.type === 'contrib' ? 'contrib' : undefined,
                 value: r.type === 'nii' ? Math.max(0, safeNumber(r.value)) : undefined,
               }))
             : DEFAULT_REDUCTIONS,
@@ -340,7 +341,7 @@ const DamagesCalculator: React.FC = () => {
                 enabled: Boolean(r.enabled ?? true),
                 label: String(r.label ?? ''),
                 percent: clampPercent(safeNumber(r.percent)),
-                type: r.type === 'nii' ? 'nii' : r.type === 'risk' ? 'risk' : undefined,
+                type: r.type === 'nii' ? 'nii' : r.type === 'risk' ? 'risk' : r.type === 'contrib' ? 'contrib' : undefined,
                 value: r.type === 'nii' ? Math.max(0, safeNumber(r.value)) : undefined,
               }))
             : DEFAULT_REDUCTIONS,
@@ -506,10 +507,13 @@ const DamagesCalculator: React.FC = () => {
   const removeReduction = (id: string) =>
     setSheetWithHistory((prev) => ({ ...prev, reductions: prev.reductions.filter((r) => r.id !== id) }));
 
-  const addReduction = () =>
+  const addContribReduction = () =>
     setSheetWithHistory((prev) => ({
       ...prev,
-      reductions: [...prev.reductions, { id: uid(), enabled: true, label: 'הפחתה נוספת (%)', percent: 0 }],
+      reductions: [
+        ...prev.reductions,
+        { id: uid(), enabled: true, label: lang === 'he' ? 'אשם תורם (%)' : 'Contributory negligence (%)', percent: 0, type: 'contrib' as const },
+      ],
     }));
 
   const addNiiReduction = () =>
@@ -573,7 +577,8 @@ const DamagesCalculator: React.FC = () => {
     lines.push([quote('אחוז שכ״ט (%)'), quote(sheet.attorneyFeePercent)].join(','));
     lines.push([quote('הוצאות תובע (₪)'), quote(sheet.plaintiffExpenses)].join(','));
     lines.push('');
-    lines.push([quote('אשם תורם (%)'), quote(sheet.contributoryNegligencePercent)].join(','));
+    const effectiveContrib = getContribPctFromSheet({ contributoryNegligencePercent: sheet.contributoryNegligencePercent, reductions: sheet.reductions });
+    lines.push([quote('אשם תורם (%)'), quote(effectiveContrib)].join(','));
     for (const r of sheet.reductions) {
       lines.push([quote(r.enabled ? 'הפחתה פעילה' : 'הפחתה לא פעילה'), quote(r.label), quote(r.percent)].join(','));
     }
@@ -635,7 +640,7 @@ const DamagesCalculator: React.FC = () => {
               enabled: Boolean(r.enabled ?? true),
               label: String(r.label ?? ''),
               percent: clampPercent(safeNumber(r.percent)),
-              type: r.type === 'nii' ? 'nii' : r.type === 'risk' ? 'risk' : undefined,
+              type: r.type === 'nii' ? 'nii' : r.type === 'risk' ? 'risk' : r.type === 'contrib' ? 'contrib' : undefined,
               value: r.type === 'nii' ? Math.max(0, safeNumber(r.value)) : undefined,
             }))
           : [],
@@ -675,7 +680,7 @@ const DamagesCalculator: React.FC = () => {
               enabled: Boolean(r.enabled ?? true),
               label: String(r.label ?? ''),
               percent: clampPercent(safeNumber(r.percent)),
-              type: r.type === 'nii' ? 'nii' : r.type === 'risk' ? 'risk' : undefined,
+              type: r.type === 'nii' ? 'nii' : r.type === 'risk' ? 'risk' : r.type === 'contrib' ? 'contrib' : undefined,
               value: r.type === 'nii' ? Math.max(0, safeNumber(r.value)) : undefined,
             }))
           : [],
@@ -905,6 +910,53 @@ const DamagesCalculator: React.FC = () => {
     [setSheetWithHistory]
   );
 
+  if (showDashboard) {
+    return (
+      <div className="space-y-6" dir="rtl">
+        <div className="rounded-card border border-pearl bg-white p-6 shadow-card-xl max-w-3xl mx-auto">
+          <h2 className="text-xl font-semibold text-navy mb-2">{t('dashboardTitle', lang)}</h2>
+          <p className="text-slate text-sm mb-6">{t('dashboardIntro', lang)}</p>
+          <div className="space-y-4 text-sm text-slate">
+            <section>
+              <h3 className="font-semibold text-navy mb-1">{t('sidebarActions', lang)}</h3>
+              <p>{t('helpActions', lang)}</p>
+            </section>
+            <section>
+              <h3 className="font-semibold text-navy mb-1">{t('sidebarTemplates', lang)}</h3>
+              <p>{t('helpTemplates', lang)}</p>
+            </section>
+            <section>
+              <h3 className="font-semibold text-navy mb-1">{t('sidebarHistory', lang)}</h3>
+              <p>{t('helpHistory', lang)}</p>
+            </section>
+            <section>
+              <h3 className="font-semibold text-navy mb-1">{t('sidebarExport', lang)}</h3>
+              <p>{t('helpExport', lang)}</p>
+            </section>
+            <section>
+              <h3 className="font-semibold text-navy mb-1">{t('sidebarTools', lang)}</h3>
+              <p>{t('helpTools', lang)}</p>
+            </section>
+            <section>
+              <h3 className="font-semibold text-navy mb-1">{lang === 'he' ? 'נוסחת החישוב' : 'Formula'}</h3>
+              <p>{t('helpFormula', lang)}</p>
+            </section>
+          </div>
+          <div className="mt-8">
+            <button
+              type="button"
+              className="btn-primary px-6 py-3 text-base inline-flex items-center gap-2"
+              onClick={() => { setSheet(defaultSheet()); setShowDashboard(false); }}
+            >
+              <Plus className="w-5 h-5" />
+              {t('createNewTable', lang)}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6" dir="rtl">
       <div className="flex flex-col md:flex-row gap-4 md:gap-6">
@@ -916,20 +968,13 @@ const DamagesCalculator: React.FC = () => {
                 <Plus className="w-4 h-4 shrink-0" />
                 {t('addDamageHead', lang)}
               </button>
-              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={addReduction}>
+              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={addContribReduction}>
                 <Plus className="w-4 h-4 shrink-0" />
-                {t('addDeduction', lang)}
+                {t('contribNegPct', lang)}
               </button>
               <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={addNiiReduction}>
                 <Plus className="w-4 h-4 shrink-0" />
                 {lang === 'he' ? 'מל״ל (סכום)' : 'NII (amount)'}
-              </button>
-              <button
-                type="button"
-                className="btn-outline text-sm px-3 py-2 justify-start gap-2"
-                onClick={() => { contribInputRef.current?.focus(); contribInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}
-              >
-                {t('contribNegPct', lang)}
               </button>
               <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={addRiskReduction}>
                 <Plus className="w-4 h-4 shrink-0" />
@@ -995,6 +1040,10 @@ const DamagesCalculator: React.FC = () => {
           <section className="space-y-2">
             <h3 className="text-xs font-semibold text-slate-light uppercase tracking-wide">{t('sidebarTools', lang)}</h3>
             <div className="flex flex-col gap-1.5">
+              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={() => setShowDashboard(true)}>
+                <LayoutTemplate className="w-4 h-4 shrink-0" />
+                {t('goToDashboard', lang)}
+              </button>
               <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={reset}>
                 <RotateCcw className="w-4 h-4 shrink-0" />
                 {t('reset', lang)}
@@ -1315,27 +1364,29 @@ const DamagesCalculator: React.FC = () => {
           </div>
           <div className="card-underline" />
           <div className="card-body space-y-3">
-            <div className="rounded-card border border-pearl bg-white p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-2">
-                <span className="badge-warning">אשם תורם</span>
-                <span className="text-xs text-slate-light">(% מהסכום הכולל)</span>
-              </div>
-                <div className="flex items-center gap-2 justify-between sm:justify-end">
+            {!sheet.reductions.some((r) => r.type === 'contrib') && (
+              <div className="rounded-card border border-pearl bg-white p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-2">
-                  <input
-                    ref={contribInputRef}
-                    id="contributory-negligence-percent"
-                    type="number"
-                    className="w-28 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
-                    value={sheet.contributoryNegligencePercent}
-                    onChange={(e) =>
-                      setSheetWithHistory((prev) => ({ ...prev, contributoryNegligencePercent: clampPercent(safeNumber(e.target.value)) }))
-                    }
-                  />
-                  <span className="text-xs text-slate-light">%</span>
+                  <span className="badge-warning">אשם תורם</span>
+                  <span className="text-xs text-slate-light">(% מהסכום הכולל)</span>
+                </div>
+                <div className="flex items-center gap-2 justify-between sm:justify-end">
+                  <div className="flex items-center gap-2">
+                    <input
+                      ref={contribInputRef}
+                      id="contributory-negligence-percent"
+                      type="number"
+                      className="w-28 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                      value={sheet.contributoryNegligencePercent}
+                      onChange={(e) =>
+                        setSheetWithHistory((prev) => ({ ...prev, contributoryNegligencePercent: clampPercent(safeNumber(e.target.value)) }))
+                      }
+                    />
+                    <span className="text-xs text-slate-light">%</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {sheet.reductions.map((r) => (
               <div key={r.id} className="rounded-card border border-pearl bg-white p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">

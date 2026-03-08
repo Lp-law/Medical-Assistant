@@ -6,7 +6,7 @@
 
 export type ReductionForNet = {
   enabled: boolean;
-  type?: 'percent' | 'nii' | 'risk';
+  type?: 'percent' | 'contrib' | 'nii' | 'risk';
   percent?: number;
   value?: number;
   label?: string;
@@ -50,10 +50,17 @@ export interface CalcNetTotalsResult {
   after: number;
 }
 
+/** Effective contributory negligence %: first enabled reduction with type 'contrib', else sheet field. */
+export function getContribPctFromSheet(sheet: SheetForNet): number {
+  const byContrib = sheet.reductions.find((r) => r.enabled && r.type === 'contrib');
+  if (byContrib != null) return clampPct(Number(byContrib.percent) || 0);
+  return clampPct(sheet.contributoryNegligencePercent);
+}
+
 /**
  * Calc net in fixed order: before → afterContrib → afterNii (minus NII amount) → afterRisk (minus risk %) → after.
  * @param baseTotal - Total Before (net from rows)
- * @param sheet - contributoryNegligencePercent + reductions (with optional type 'nii' and value)
+ * @param sheet - contributoryNegligencePercent + reductions (type 'contrib' overrides field; 'nii', 'risk')
  * @param params - riskPct overrides sheet loss-of-chance (e.g. for scenarios)
  */
 export function calcNetTotals(
@@ -62,7 +69,8 @@ export function calcNetTotals(
   params?: { riskPct?: number }
 ): CalcNetTotalsResult {
   const before = baseTotal;
-  const contribFactor = 1 - clampPct(sheet.contributoryNegligencePercent) / 100;
+  const contribPct = getContribPctFromSheet(sheet);
+  const contribFactor = 1 - contribPct / 100;
   const afterContrib = before * contribFactor;
 
   const niiAmount = getNiiAmount(sheet.reductions);
