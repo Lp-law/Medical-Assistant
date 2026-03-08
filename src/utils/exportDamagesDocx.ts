@@ -2,6 +2,46 @@ import { Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun } from
 import type { ExportLang } from './exportForWordI18n';
 import { getLabels, formatNumber } from './exportForWordI18n';
 
+/** Normalize Hebrew for lookup: trim, collapse spaces, remove geresh (U+05F3) and optional quote. */
+function normHe(s: string): string {
+  return (s || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/[\u05F3']/g, '') // geresh and ASCII quote
+    .replace(/״/g, '"');
+}
+
+/** Hebrew → English for document title and damage head names when exporting in English. */
+const HE_TO_EN: Record<string, string> = {
+  // Titles / template names
+  [normHe('נזק אורטופדי')]: 'Orthopedic injury',
+  [normHe('תביעת שיניים')]: 'Dental claim',
+  [normHe('איחור בגילוי סרטן')]: 'Delayed cancer diagnosis',
+  [normHe('תאונת דרכים')]: 'Road accident',
+  [normHe('מחשבון כללי')]: 'General calculator',
+  [normHe('מחשבון נזק')]: 'Damages calculator',
+  // Damage head names (rows)
+  [normHe('כאב וסבל')]: 'Pain and suffering',
+  [normHe('עזרת צד ג׳')]: 'Third-party assistance',
+  [normHe('עזרת צד ג')]: 'Third-party assistance',
+  [normHe('הוצאות רפואיות')]: 'Medical expenses',
+  [normHe('הפסדי שכר')]: 'Loss of earnings',
+  [normHe('ניידות')]: 'Mobility',
+  [normHe('התאמות דיור')]: 'Housing accommodations',
+  [normHe('מל״ל')]: 'NII',
+  [normHe('מל"ל')]: 'NII',
+  [normHe('ראש נזק חדש')]: 'New damage head',
+  [normHe('הוצאות רפואיות / טיפולי שיניים')]: 'Medical expenses / Dental treatment',
+  [normHe('פגיעה בסיכויי החלמה (%)')]: 'Loss of chance (%)',
+  [normHe('הפחתה נוספת (%)')]: 'Additional reduction (%)',
+};
+
+function translateToEnglish(text: string): string {
+  if (!text || typeof text !== 'string') return text;
+  const key = normHe(text);
+  return HE_TO_EN[key] ?? text;
+}
+
 function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -61,6 +101,8 @@ export async function exportDamagesToDocx(
   const L = getLabels(exportLang);
   const fmt = (n: number): string => formatNumber(exportLang, Number.isFinite(n) ? n : 0);
   const currencySymbol = '₪';
+  const docTitle = exportLang === 'en-GB' ? translateToEnglish(sheet.title) : sheet.title;
+  const itemLabel = (name: string): string => (exportLang === 'en-GB' ? translateToEnglish(name) : name);
 
   const rows: TableRow[] = [];
 
@@ -81,7 +123,7 @@ export async function exportDamagesToDocx(
     rows.push(
       new TableRow({
         children: [
-          cell(r.name),
+          cell(itemLabel(r.name)),
           cell(fmt(r.plaintiff)),
           cell(fmt(r.defendant)),
           cell(fmt(avg)),
@@ -118,7 +160,7 @@ export async function exportDamagesToDocx(
   });
 
   const summaryLines = [
-    `${L.titleLabel}: ${sheet.title}`,
+    `${L.titleLabel}: ${docTitle}`,
     `${L.contributoryNegligence}: ${sheet.contributoryNegligencePercent}%`,
     `${L.attorneyFeePct}: ${sheet.attorneyFeePercent}%`,
     `${L.plaintiffExpenses}: ${currencySymbol}${fmt(sheet.plaintiffExpenses)}`,
@@ -132,7 +174,7 @@ export async function exportDamagesToDocx(
       {
         properties: {},
         children: [
-          new Paragraph({ children: [new TextRun({ text: sheet.title, bold: true, size: 32 })] }),
+          new Paragraph({ children: [new TextRun({ text: docTitle, bold: true, size: 32 })] }),
           new Paragraph(''),
           table,
           new Paragraph(''),
