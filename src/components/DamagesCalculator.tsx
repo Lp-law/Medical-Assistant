@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Download, Plus, Trash2, Upload, RotateCcw, Undo2, Redo2, LayoutTemplate, FileText, FileDown, X, Save } from 'lucide-react';
+import { Download, Plus, Trash2, Upload, RotateCcw, Undo2, Redo2, LayoutTemplate, FileText, FileDown, X, Save, Scale } from 'lucide-react';
 import { storageGetItem, storageSetItem } from '../utils/storageGuard';
 import { getBuiltInTemplates, getSavedTemplates, saveTemplate, deleteSavedTemplate, cloneSheetWithNewIds, type TemplateItem } from '../utils/damagesTemplates';
 import type { QuestionnairePatch } from '../utils/questionnaire';
@@ -224,7 +224,7 @@ const DamagesCalculator: React.FC = () => {
   const [newTemplateColor, setNewTemplateColor] = useState('#0ea5e9');
   const [savedTemplates, setSavedTemplates] = useState<TemplateItem[]>(() => getSavedTemplates());
   const [viewMode, setViewMode] = useState<ViewMode>('full');
-  const [showDashboard, setShowDashboard] = useState<boolean>(() => !storageGetItem(STORAGE_KEY_V3));
+  const [showDashboard, setShowDashboard] = useState<boolean>(() => true);
 
   const pastRef = useRef<Sheet[]>([]);
   const futureRef = useRef<Sheet[]>([]);
@@ -913,44 +913,68 @@ const DamagesCalculator: React.FC = () => {
   if (showDashboard) {
     return (
       <div className="space-y-6" dir="rtl">
-        <div className="rounded-card border border-pearl bg-white p-6 shadow-card-xl max-w-3xl mx-auto">
-          <h2 className="text-xl font-semibold text-navy mb-2">{t('dashboardTitle', lang)}</h2>
-          <p className="text-slate text-sm mb-6">{t('dashboardIntro', lang)}</p>
-          <div className="space-y-4 text-sm text-slate">
-            <section>
-              <h3 className="font-semibold text-navy mb-1">{t('sidebarActions', lang)}</h3>
-              <p>{t('helpActions', lang)}</p>
-            </section>
-            <section>
-              <h3 className="font-semibold text-navy mb-1">{t('sidebarTemplates', lang)}</h3>
-              <p>{t('helpTemplates', lang)}</p>
-            </section>
-            <section>
-              <h3 className="font-semibold text-navy mb-1">{t('sidebarHistory', lang)}</h3>
-              <p>{t('helpHistory', lang)}</p>
-            </section>
-            <section>
-              <h3 className="font-semibold text-navy mb-1">{t('sidebarExport', lang)}</h3>
-              <p>{t('helpExport', lang)}</p>
-            </section>
-            <section>
-              <h3 className="font-semibold text-navy mb-1">{t('sidebarTools', lang)}</h3>
-              <p>{t('helpTools', lang)}</p>
-            </section>
-            <section>
-              <h3 className="font-semibold text-navy mb-1">{lang === 'he' ? 'נוסחת החישוב' : 'Formula'}</h3>
-              <p>{t('helpFormula', lang)}</p>
-            </section>
+        <div className="rounded-card border border-pearl bg-white shadow-card-xl overflow-hidden max-w-4xl mx-auto">
+          <div className="bg-gradient-to-b from-navy/5 to-transparent p-8 md:p-10 flex flex-col md:flex-row items-center gap-6 md:gap-10">
+            <div className="flex-shrink-0 w-32 h-32 md:w-40 md:h-40 rounded-full bg-gold/15 flex items-center justify-center text-navy">
+              <Scale className="w-16 h-16 md:w-20 md:h-20 text-gold" strokeWidth={1.5} aria-hidden />
+            </div>
+            <div className="flex-1 text-center md:text-right">
+              <h2 className="text-2xl md:text-3xl font-bold text-navy mb-2">{t('dashboardTitle', lang)}</h2>
+              <p className="text-slate">{t('dashboardIntro', lang)}</p>
+            </div>
           </div>
-          <div className="mt-8">
-            <button
-              type="button"
-              className="btn-primary px-6 py-3 text-base inline-flex items-center gap-2"
-              onClick={() => { setSheet(defaultSheet()); setShowDashboard(false); }}
-            >
-              <Plus className="w-5 h-5" />
-              {t('createNewTable', lang)}
-            </button>
+          <div className="p-6 md:p-8 border-t border-pearl">
+            <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2">
+              <section className="rounded-card border border-pearl bg-pearl/20 p-4">
+                <h3 className="font-semibold text-navy mb-2 flex items-center gap-2">
+                  <Plus className="w-4 h-4 text-gold" />
+                  {t('sidebarActions', lang)}
+                </h3>
+                <p className="text-sm text-slate leading-relaxed">{t('helpActions', lang)}</p>
+              </section>
+              <section className="rounded-card border border-pearl bg-pearl/20 p-4">
+                <h3 className="font-semibold text-navy mb-2 flex items-center gap-2">
+                  <LayoutTemplate className="w-4 h-4 text-gold" />
+                  {t('sidebarTemplates', lang)}
+                </h3>
+                <p className="text-sm text-slate leading-relaxed">{t('helpTemplates', lang)}</p>
+              </section>
+              <section className="rounded-card border border-pearl bg-pearl/20 p-4">
+                <h3 className="font-semibold text-navy mb-2 flex items-center gap-2">
+                  <Undo2 className="w-4 h-4 text-gold" />
+                  {t('sidebarHistory', lang)}
+                </h3>
+                <p className="text-sm text-slate leading-relaxed">{t('helpHistory', lang)}</p>
+              </section>
+              <section className="rounded-card border border-pearl bg-pearl/20 p-4">
+                <h3 className="font-semibold text-navy mb-2 flex items-center gap-2">
+                  <Download className="w-4 h-4 text-gold" />
+                  {t('sidebarExport', lang)}
+                </h3>
+                <p className="text-sm text-slate leading-relaxed">{t('helpExport', lang)}</p>
+              </section>
+              <section className="rounded-card border border-pearl bg-pearl/20 p-4">
+                <h3 className="font-semibold text-navy mb-2 flex items-center gap-2">
+                  <RotateCcw className="w-4 h-4 text-gold" />
+                  {t('sidebarTools', lang)}
+                </h3>
+                <p className="text-sm text-slate leading-relaxed">{t('helpTools', lang)}</p>
+              </section>
+              <section className="rounded-card border border-pearl bg-pearl/20 p-4 sm:col-span-2">
+                <h3 className="font-semibold text-navy mb-2">{lang === 'he' ? 'נוסחת החישוב' : 'Formula'}</h3>
+                <p className="text-sm text-slate leading-relaxed">{t('helpFormula', lang)}</p>
+              </section>
+            </div>
+            <div className="mt-8 flex justify-center">
+              <button
+                type="button"
+                className="btn-primary px-8 py-4 text-base inline-flex items-center gap-2 shadow-lg hover:shadow-xl transition"
+                onClick={() => { setSheet(defaultSheet()); setShowDashboard(false); }}
+              >
+                <Plus className="w-5 h-5" />
+                {t('createNewTable', lang)}
+              </button>
+            </div>
           </div>
         </div>
       </div>

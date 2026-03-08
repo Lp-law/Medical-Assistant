@@ -151,6 +151,16 @@ export function getBuiltInTemplates(): TemplateItem[] {
 }
 
 const STORAGE_KEY_TEMPLATES = 'calc_templates_v1';
+const STORAGE_KEY_TEMPLATES_BACKUP = 'calc_templates_backup_v1';
+
+function backupTemplatesBeforeWrite(): void {
+  try {
+    const raw = storageGetItem(STORAGE_KEY_TEMPLATES);
+    if (raw) storageSetItem(STORAGE_KEY_TEMPLATES_BACKUP, raw);
+  } catch {
+    // ignore backup failure
+  }
+}
 
 export function getSavedTemplates(): TemplateItem[] {
   if (typeof window === 'undefined') return [];
@@ -164,13 +174,27 @@ export function getSavedTemplates(): TemplateItem[] {
   }
 }
 
+/** Restore templates from last backup (e.g. after accidental overwrite). Returns true if restored. */
+export function restoreTemplatesFromBackup(): boolean {
+  try {
+    const raw = storageGetItem(STORAGE_KEY_TEMPLATES_BACKUP);
+    if (!raw) return false;
+    storageSetItem(STORAGE_KEY_TEMPLATES, raw);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function saveTemplate(item: TemplateItem): void {
+  backupTemplatesBeforeWrite();
   const list = getSavedTemplates().filter((t) => t.id !== item.id);
   list.push(item);
   storageSetItem(STORAGE_KEY_TEMPLATES, JSON.stringify(list));
 }
 
 export function deleteSavedTemplate(id: string): void {
+  backupTemplatesBeforeWrite();
   const list = getSavedTemplates().filter((t) => t.id !== id);
   storageSetItem(STORAGE_KEY_TEMPLATES, JSON.stringify(list));
 }
