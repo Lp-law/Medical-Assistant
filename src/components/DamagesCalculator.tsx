@@ -1257,21 +1257,22 @@ const DamagesCalculator: React.FC = () => {
             </div>
 
             {sheet.reductions.map((r) => (
-              <div key={r.id} className="rounded-card border border-pearl bg-white p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-2">
+              <div key={r.id} className="rounded-card border border-pearl bg-white p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   <input
                     type="checkbox"
                     checked={r.enabled}
                     onChange={(e) => updateReduction(r.id, { enabled: e.target.checked })}
+                    className="shrink-0"
                   />
                   <input
-                    className="w-56 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                    className="w-56 min-w-0 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
                     value={r.label}
                     onChange={(e) => updateReduction(r.id, { label: e.target.value })}
                   />
-                  {r.type === 'nii' && <span className="text-xs text-slate-light">(₪)</span>}
+                  {r.type === 'nii' && <span className="text-xs text-slate-light shrink-0">(₪)</span>}
                 </div>
-                <div className="flex items-center gap-2 justify-between sm:justify-end">
+                <div className="flex items-center gap-3 justify-end shrink-0">
                   <div className="flex items-center gap-2">
                     {r.type === 'nii' ? (
                       <>
@@ -1296,8 +1297,8 @@ const DamagesCalculator: React.FC = () => {
                       </>
                     )}
                   </div>
-                  <button type="button" className="btn-outline text-[11px] px-3 py-1.5" onClick={() => removeReduction(r.id)}>
-                    <Trash2 className="w-4 h-4" />
+                  <button type="button" className="btn-outline text-[11px] px-3 py-1.5 shrink-0 inline-flex items-center gap-1.5" onClick={() => removeReduction(r.id)} aria-label="הסר הפחתה">
+                    <Trash2 className="w-4 h-4 shrink-0" />
                     הסר
                   </button>
                 </div>
