@@ -781,8 +781,9 @@ const DamagesCalculator: React.FC = () => {
   };
 
   const exportDocx = () => {
-    exportDamagesToDocx(sheet, totals, after, attorneyFeeAndGross, lang).catch((e) => {
-      alert(e?.message ?? (lang === 'he' ? 'ייצוא DOCX נכשל' : 'DOCX export failed'));
+    const currentLang = langRef.current;
+    exportDamagesToDocx(sheet, totals, after, attorneyFeeAndGross, currentLang).catch((e) => {
+      alert(e?.message ?? (currentLang === 'he' ? 'ייצוא DOCX נכשל' : 'DOCX export failed'));
     });
   };
 
@@ -820,6 +821,10 @@ const DamagesCalculator: React.FC = () => {
   }, [activeDefendants, after.avg.afterAll, after.defendant.afterAll, after.plaintiff.afterAll]);
 
   const { lang, setLang } = useLang();
+  const langRef = useRef(lang);
+  useEffect(() => {
+    langRef.current = lang;
+  }, [lang]);
   const [exportForWordOpen, setExportForWordOpen] = useState(false);
   const [questionnaireOpen, setQuestionnaireOpen] = useState(false);
   const showColumn = (col: ColumnId): boolean => activeColumns.includes(col);

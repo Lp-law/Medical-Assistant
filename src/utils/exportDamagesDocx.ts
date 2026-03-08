@@ -57,8 +57,9 @@ export async function exportDamagesToDocx(
   attorneyFeeAndGross: AttorneyFeeGross,
   lang: ExportLang = 'he',
 ): Promise<void> {
-  const L = getLabels(lang);
-  const fmt = (n: number): string => formatNumber(lang, Number.isFinite(n) ? n : 0);
+  const exportLang: ExportLang = lang === 'en-GB' ? 'en-GB' : 'he';
+  const L = getLabels(exportLang);
+  const fmt = (n: number): string => formatNumber(exportLang, Number.isFinite(n) ? n : 0);
   const currencySymbol = '₪';
 
   const rows: TableRow[] = [];
@@ -113,7 +114,7 @@ export async function exportDamagesToDocx(
   const table = new Table({
     rows,
     width: { size: 100, type: 'pct' },
-    visuallyRightToLeft: lang === 'he',
+    visuallyRightToLeft: exportLang === 'he',
   });
 
   const summaryLines = [
