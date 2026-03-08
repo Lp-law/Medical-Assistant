@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Download, Plus, Trash2, Upload, RotateCcw, Undo2, Redo2, LayoutTemplate, FileText, FileDown, X } from 'lucide-react';
+import { Download, Plus, Trash2, Upload, RotateCcw, Undo2, Redo2, LayoutTemplate, FileText, FileDown, X, Save } from 'lucide-react';
 import { storageGetItem, storageSetItem } from '../utils/storageGuard';
 import { getBuiltInTemplates, getSavedTemplates, saveTemplate, deleteSavedTemplate, cloneSheetWithNewIds, type TemplateItem } from '../utils/damagesTemplates';
 import { exportDamagesToDocx } from '../utils/exportDamagesDocx';
@@ -922,6 +922,10 @@ const DamagesCalculator: React.FC = () => {
             <LayoutTemplate className="w-4 h-4" />
             תבניות
           </button>
+          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={() => setSaveTemplateOpen(true)}>
+            <Save className="w-4 h-4" />
+            {t('saveAsTemplate', lang)}
+          </button>
           <button type="button" className="btn-outline text-sm px-4 py-2" onClick={addRow}>
             <Plus className="w-4 h-4" />
             הוסף ראש נזק
@@ -1630,10 +1634,11 @@ const DamagesCalculator: React.FC = () => {
                         </button>
                         <button
                           type="button"
-                          className="btn-outline text-[11px] px-2 py-1 text-red-600 border-red-200"
+                          className="btn-outline text-[11px] px-2 py-1.5 text-red-600 border-red-200 inline-flex items-center gap-1.5 shrink-0"
                           onClick={() => { deleteSavedTemplate(t.id); setSavedTemplates(getSavedTemplates()); }}
-                          aria-label="מחק תבנית"
+                          aria-label={lang === 'he' ? 'מחק תבנית' : 'Delete template'}
                         >
+                          <Trash2 className="w-4 h-4" />
                           מחק
                         </button>
                       </div>
@@ -1669,8 +1674,8 @@ const DamagesCalculator: React.FC = () => {
               </div>
             </div>
             <div className="flex gap-2 justify-end mt-6">
-              <button type="button" className="btn-outline px-4 py-2" onClick={() => { setSaveTemplateOpen(false); setTemplateLibraryOpen(true); }}>
-                ביטול
+              <button type="button" className="btn-outline px-4 py-2" onClick={() => setSaveTemplateOpen(false)}>
+                {t('cancel', lang)}
               </button>
               <button type="button" className="btn-primary px-4 py-2" onClick={handleSaveAsTemplate}>
                 שמור

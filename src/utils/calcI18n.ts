@@ -91,6 +91,7 @@ const dict: Record<Lang, Record<string, string>> = {
     totalCompensationNet: 'סה״כ פיצוי (נטו)',
     plaintiffSolicitorFee: 'שכ״ט עו״ד תובע',
     grandTotalPayable: 'סה״כ לתשלום',
+    saveAsTemplate: 'שמור כתבנית',
   },
   'en-GB': {
     sanityCheck: 'Sanity Check',
@@ -168,6 +169,7 @@ const dict: Record<Lang, Record<string, string>> = {
     totalCompensationNet: 'Total compensation (net)',
     plaintiffSolicitorFee: 'Plaintiff solicitor fee',
     grandTotalPayable: 'Grand total payable',
+    saveAsTemplate: 'Save as template',
   },
 };
 
