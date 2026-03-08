@@ -874,135 +874,164 @@ const DamagesCalculator: React.FC = () => {
 
   return (
     <div className="space-y-6" dir="rtl">
-      <div className="rounded-card border border-pearl bg-white p-4 shadow-card-xl flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="space-y-1">
-          <div className="flex items-center gap-3 flex-wrap">
-            <p className="text-lg font-semibold text-navy">מחשבון נזק</p>
-            <span className="text-xs text-slate-light flex items-center gap-2">
-              <span>שפה / Language:</span>
-              <button
-                type="button"
-                onClick={() => setLang('he')}
-                className={`px-2 py-1 rounded text-xs font-medium ${lang === 'he' ? 'bg-navy text-gold' : 'bg-pearl text-slate'}`}
-              >
-                עברית
+      <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+        <aside className="md:w-56 shrink-0 rounded-card border border-pearl bg-white p-4 shadow-card-xl h-fit md:sticky md:top-4 space-y-5">
+          <section className="space-y-2">
+            <h3 className="text-xs font-semibold text-slate-light uppercase tracking-wide">{t('sidebarActions', lang)}</h3>
+            <div className="flex flex-col gap-1.5">
+              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={addRow}>
+                <Plus className="w-4 h-4 shrink-0" />
+                {t('addDamageHead', lang)}
+              </button>
+              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={addReduction}>
+                <Plus className="w-4 h-4 shrink-0" />
+                {t('addDeduction', lang)}
+              </button>
+              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={addNiiReduction}>
+                <Plus className="w-4 h-4 shrink-0" />
+                {lang === 'he' ? 'מל״ל (סכום)' : 'NII (amount)'}
               </button>
               <button
                 type="button"
-                onClick={() => setLang('en-GB')}
-                className={`px-2 py-1 rounded text-xs font-medium ${lang === 'en-GB' ? 'bg-navy text-gold' : 'bg-pearl text-slate'}`}
+                className="btn-outline text-sm px-3 py-2 justify-start gap-2"
+                onClick={() => { contribInputRef.current?.focus(); contribInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}
               >
-                English
+                {t('contribNegPct', lang)}
               </button>
-            </span>
-          </div>
-          <p className="text-xs text-slate-light">טבלה דינמית · תובע/נתבע/ממוצע · הפחתות באחוזים · שמירה מקומית</p>
-          <div className="flex items-center gap-2 flex-wrap mt-1">
-            <span className="text-xs text-slate-light">{lang === 'he' ? 'תצוגה:' : 'View:'}</span>
-            <button
-              type="button"
-              onClick={() => setViewMode('full')}
-              className={`px-2 py-1 rounded text-xs font-medium ${viewMode === 'full' ? 'bg-navy text-gold' : 'bg-pearl text-slate'}`}
-            >
-              {t('viewFull', lang)}
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('defendantOnly')}
-              className={`px-2 py-1 rounded text-xs font-medium ${viewMode === 'defendantOnly' ? 'bg-navy text-gold' : 'bg-pearl text-slate'}`}
-            >
-              {t('viewDefendantOnly', lang)}
-            </button>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={undo} disabled={past.length === 0} title="בטל (Ctrl+Z)">
-            <Undo2 className="w-4 h-4" />
-            בטל
-          </button>
-          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={redo} disabled={future.length === 0} title="בצע שוב">
-            <Redo2 className="w-4 h-4" />
-            בצע שוב
-          </button>
-          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={() => setTemplateLibraryOpen(true)}>
-            <LayoutTemplate className="w-4 h-4" />
-            תבניות
-          </button>
-          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={() => setSaveTemplateOpen(true)}>
-            <Save className="w-4 h-4" />
-            {t('saveAsTemplate', lang)}
-          </button>
-          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={addRow}>
-            <Plus className="w-4 h-4" />
-            הוסף ראש נזק
-          </button>
-          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={addReduction}>
-            <Plus className="w-4 h-4" />
-            הוסף הפחתה
-          </button>
-          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={addNiiReduction}>
-            <Plus className="w-4 h-4" />
-            {lang === 'he' ? 'מל״ל (סכום)' : 'NII (amount)'}
-          </button>
-          <button
-            type="button"
-            className="btn-outline text-sm px-4 py-2"
-            onClick={() => { contribInputRef.current?.focus(); contribInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}
-          >
-            {t('contribNegPct', lang)}
-          </button>
-          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={addRiskReduction}>
-            <Plus className="w-4 h-4" />
-            {t('lossOfChancePct', lang)}
-          </button>
-          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={addDefendant}>
-            <Plus className="w-4 h-4" />
-            הוסף נתבע
-          </button>
-          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={() => importRef.current?.click()}>
-            <Upload className="w-4 h-4" />
-            ייבוא JSON
-          </button>
-          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={exportCsv}>
-            <Download className="w-4 h-4" />
-            ייצוא אקסל (CSV)
-          </button>
-          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={exportJson}>
-            <Download className="w-4 h-4" />
-            ייצוא JSON
-          </button>
-          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={exportDocx}>
-            <FileText className="w-4 h-4" />
-            ייצוא DOCX
-          </button>
-          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={() => setExportForWordOpen(true)}>
-            <FileDown className="w-4 h-4" />
-            יצוא ל-Word
-          </button>
-          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={reset}>
-            <RotateCcw className="w-4 h-4" />
-            איפוס
-          </button>
-          <button type="button" className="btn-outline text-sm px-4 py-2" onClick={() => setQuestionnaireOpen(true)}>
-            <FileText className="w-4 h-4" />
-            {lang === 'he' ? 'שאלון חכמה' : 'Smart questionnaire'}
-          </button>
+              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={addRiskReduction}>
+                <Plus className="w-4 h-4 shrink-0" />
+                {t('lossOfChancePct', lang)}
+              </button>
+              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={addDefendant}>
+                <Plus className="w-4 h-4 shrink-0" />
+                {t('addDefendant', lang)}
+              </button>
+            </div>
+          </section>
+          <section className="space-y-2">
+            <h3 className="text-xs font-semibold text-slate-light uppercase tracking-wide">{t('sidebarTemplates', lang)}</h3>
+            <div className="flex flex-col gap-1.5">
+              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={() => setTemplateLibraryOpen(true)}>
+                <LayoutTemplate className="w-4 h-4 shrink-0" />
+                {t('templates', lang)}
+              </button>
+              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={() => setSaveTemplateOpen(true)}>
+                <Save className="w-4 h-4 shrink-0" />
+                {t('saveAsTemplate', lang)}
+              </button>
+            </div>
+          </section>
+          <section className="space-y-2">
+            <h3 className="text-xs font-semibold text-slate-light uppercase tracking-wide">{t('sidebarHistory', lang)}</h3>
+            <div className="flex flex-col gap-1.5">
+              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={undo} disabled={past.length === 0} title="Ctrl+Z">
+                <Undo2 className="w-4 h-4 shrink-0" />
+                {t('undo', lang)}
+              </button>
+              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={redo} disabled={future.length === 0} title="Ctrl+Y">
+                <Redo2 className="w-4 h-4 shrink-0" />
+                {t('redo', lang)}
+              </button>
+            </div>
+          </section>
+          <section className="space-y-2">
+            <h3 className="text-xs font-semibold text-slate-light uppercase tracking-wide">{t('sidebarExport', lang)}</h3>
+            <div className="flex flex-col gap-1.5">
+              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={() => importRef.current?.click()}>
+                <Upload className="w-4 h-4 shrink-0" />
+                {t('importJson', lang)}
+              </button>
+              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={exportCsv}>
+                <Download className="w-4 h-4 shrink-0" />
+                {t('exportExcel', lang)}
+              </button>
+              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={exportJson}>
+                <Download className="w-4 h-4 shrink-0" />
+                {t('exportJson', lang)}
+              </button>
+              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={exportDocx}>
+                <FileText className="w-4 h-4 shrink-0" />
+                {t('exportDocx', lang)}
+              </button>
+              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={() => setExportForWordOpen(true)}>
+                <FileDown className="w-4 h-4 shrink-0" />
+                {t('exportWord', lang)}
+              </button>
+            </div>
+          </section>
+          <section className="space-y-2">
+            <h3 className="text-xs font-semibold text-slate-light uppercase tracking-wide">{t('sidebarTools', lang)}</h3>
+            <div className="flex flex-col gap-1.5">
+              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={reset}>
+                <RotateCcw className="w-4 h-4 shrink-0" />
+                {t('reset', lang)}
+              </button>
+              <button type="button" className="btn-outline text-sm px-3 py-2 justify-start gap-2" onClick={() => setQuestionnaireOpen(true)}>
+                <FileText className="w-4 h-4 shrink-0" />
+                {t('questionnaire', lang)}
+              </button>
+            </div>
+          </section>
           <input
             ref={importRef}
             type="file"
             accept="application/json,.json"
             className="hidden"
+            aria-hidden="true"
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (!f) return;
-              importJson(f).catch((err: any) => {
-                alert(err?.message ?? 'ייבוא נכשל');
+              importJson(f).catch((err: unknown) => {
+                alert(err instanceof Error ? err.message : 'ייבוא נכשל');
               });
               e.target.value = '';
             }}
           />
-        </div>
-      </div>
+        </aside>
+
+        <main className="flex-1 min-w-0 space-y-6">
+          <div className="rounded-card border border-pearl bg-white p-4 shadow-card-xl flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-1">
+              <div className="flex items-center gap-3 flex-wrap">
+                <p className="text-lg font-semibold text-navy">מחשבון נזק</p>
+                <span className="text-xs text-slate-light flex items-center gap-2">
+                  <span>{lang === 'he' ? 'שפה:' : 'Language:'}</span>
+                  <button
+                    type="button"
+                    onClick={() => setLang('he')}
+                    className={`px-2 py-1 rounded text-xs font-medium ${lang === 'he' ? 'bg-navy text-gold' : 'bg-pearl text-slate'}`}
+                  >
+                    {t('hebrew', lang)}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLang('en-GB')}
+                    className={`px-2 py-1 rounded text-xs font-medium ${lang === 'en-GB' ? 'bg-navy text-gold' : 'bg-pearl text-slate'}`}
+                  >
+                    {t('english', lang)}
+                  </button>
+                </span>
+              </div>
+              <p className="text-xs text-slate-light">טבלה דינמית · תובע/נתבע/ממוצע · הפחתות באחוזים · שמירה מקומית</p>
+              <div className="flex items-center gap-2 flex-wrap mt-1">
+                <span className="text-xs text-slate-light">{lang === 'he' ? 'תצוגה:' : 'View:'}</span>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('full')}
+                  className={`px-2 py-1 rounded text-xs font-medium ${viewMode === 'full' ? 'bg-navy text-gold' : 'bg-pearl text-slate'}`}
+                >
+                  {t('viewFull', lang)}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('defendantOnly')}
+                  className={`px-2 py-1 rounded text-xs font-medium ${viewMode === 'defendantOnly' ? 'bg-navy text-gold' : 'bg-pearl text-slate'}`}
+                >
+                  {t('viewDefendantOnly', lang)}
+                </button>
+              </div>
+            </div>
+          </div>
 
       {storageSaveError && (
         <div className="rounded-card border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800" role="alert">
@@ -1586,6 +1615,8 @@ const DamagesCalculator: React.FC = () => {
             )}
           </div>
         </div>
+      </div>
+        </main>
       </div>
 
       {exportForWordOpen && (
