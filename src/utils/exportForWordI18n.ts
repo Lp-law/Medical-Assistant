@@ -35,6 +35,11 @@ const labels = {
     defendantName: 'נתבע',
     amount: 'סכום',
     chartTitle: 'תרחישים – לאחר הפחתות',
+    titleLabel: 'כותרת',
+    attorneyFeePct: 'אחוז שכ״ט',
+    resultClaimant: 'תוצאה תובע',
+    resultDefendant: 'תוצאה נתבע',
+    resultAvg: 'תוצאה ממוצע',
   },
   'en-GB': {
     title: 'Damages Calculator – Summary',
@@ -65,6 +70,11 @@ const labels = {
     defendantName: 'Defendant',
     amount: 'Amount',
     chartTitle: 'Scenarios – After Reductions',
+    titleLabel: 'Title',
+    attorneyFeePct: 'Attorney fee %',
+    resultClaimant: 'Result (claimant)',
+    resultDefendant: 'Result (defendant)',
+    resultAvg: 'Result (average)',
   },
 } as const;
 

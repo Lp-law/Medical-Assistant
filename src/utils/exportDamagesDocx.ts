@@ -1,4 +1,6 @@
 import { Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun } from 'docx';
+import type { ExportLang } from './exportForWordI18n';
+import { getLabels, formatNumber } from './exportForWordI18n';
 
 function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -46,7 +48,6 @@ type AttorneyFeeGross = {
   grossAvg: number;
 };
 
-const fmt = (n: number): string => (Number.isFinite(n) ? n : 0).toLocaleString('he-IL', { maximumFractionDigits: 0 });
 const cell = (text: string): TableCell => new TableCell({ children: [new Paragraph(text)] });
 
 export async function exportDamagesToDocx(
@@ -54,15 +55,20 @@ export async function exportDamagesToDocx(
   totals: Totals,
   after: After,
   attorneyFeeAndGross: AttorneyFeeGross,
+  lang: ExportLang = 'he',
 ): Promise<void> {
+  const L = getLabels(lang);
+  const fmt = (n: number): string => formatNumber(lang, Number.isFinite(n) ? n : 0);
+  const currencySymbol = '₪';
+
   const rows: TableRow[] = [];
 
   const headerRow = new TableRow({
     children: [
-      cell('ראש נזק'),
-      cell('תובע (₪)'),
-      cell('נתבע (₪)'),
-      cell('ממוצע (₪)'),
+      cell(L.item),
+      cell(`${L.claimant} (${currencySymbol})`),
+      cell(`${L.defendant} (${currencySymbol})`),
+      cell(`${L.average} (${currencySymbol})`),
     ],
     tableHeader: true,
   });
@@ -86,7 +92,7 @@ export async function exportDamagesToDocx(
   rows.push(
     new TableRow({
       children: [
-        cell('סה״כ נטו'),
+        cell(L.netTotal),
         cell(fmt(totals.plaintiffNet)),
         cell(fmt(totals.defendantNet)),
         cell(fmt(totals.avgNet)),
@@ -96,7 +102,7 @@ export async function exportDamagesToDocx(
   rows.push(
     new TableRow({
       children: [
-        cell('סה״כ ברוטו'),
+        cell(L.grossTotal),
         cell(fmt(attorneyFeeAndGross.grossPlaintiff)),
         cell(fmt(attorneyFeeAndGross.grossDefendant)),
         cell(fmt(attorneyFeeAndGross.grossAvg)),
@@ -107,17 +113,17 @@ export async function exportDamagesToDocx(
   const table = new Table({
     rows,
     width: { size: 100, type: 'pct' },
-    visuallyRightToLeft: true,
+    visuallyRightToLeft: lang === 'he',
   });
 
   const summaryLines = [
-    `כותרת: ${sheet.title}`,
-    `אשם תורם: ${sheet.contributoryNegligencePercent}%`,
-    `אחוז שכ״ט: ${sheet.attorneyFeePercent}%`,
-    `הוצאות תובע: ₪${fmt(sheet.plaintiffExpenses)}`,
-    `תוצאה תובע: ₪${fmt(after.plaintiff.afterAll)}`,
-    `תוצאה נתבע: ₪${fmt(after.defendant.afterAll)}`,
-    `תוצאה ממוצע: ₪${fmt(after.avg.afterAll)}`,
+    `${L.titleLabel}: ${sheet.title}`,
+    `${L.contributoryNegligence}: ${sheet.contributoryNegligencePercent}%`,
+    `${L.attorneyFeePct}: ${sheet.attorneyFeePercent}%`,
+    `${L.plaintiffExpenses}: ${currencySymbol}${fmt(sheet.plaintiffExpenses)}`,
+    `${L.resultClaimant}: ${currencySymbol}${fmt(after.plaintiff.afterAll)}`,
+    `${L.resultDefendant}: ${currencySymbol}${fmt(after.defendant.afterAll)}`,
+    `${L.resultAvg}: ${currencySymbol}${fmt(after.avg.afterAll)}`,
   ];
 
   const doc = new Document({
@@ -129,7 +135,7 @@ export async function exportDamagesToDocx(
           new Paragraph(''),
           table,
           new Paragraph(''),
-          new Paragraph({ children: [new TextRun({ text: 'סיכום', bold: true, size: 28 })] }),
+          new Paragraph({ children: [new TextRun({ text: L.summaryTitle, bold: true, size: 28 })] }),
           ...summaryLines.map((line) => new Paragraph(line)),
         ],
       },
@@ -137,6 +143,7 @@ export async function exportDamagesToDocx(
   });
 
   const blob = await Packer.toBlob(doc);
-  const name = `damages-${sheet.title.replace(/[^\w\u0590-\u05FF]/g, '-')}-${new Date().toISOString().slice(0, 10)}.docx`;
+  const safeTitle = sheet.title.replace(/[^\w\u0590-\u05FF\s-]/g, '-').replace(/\s+/g, '-');
+  const name = `damages-${safeTitle}-${new Date().toISOString().slice(0, 10)}.docx`;
   saveBlob(blob, name);
 }

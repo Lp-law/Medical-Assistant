@@ -781,8 +781,8 @@ const DamagesCalculator: React.FC = () => {
   };
 
   const exportDocx = () => {
-    exportDamagesToDocx(sheet, totals, after, attorneyFeeAndGross).catch((e) => {
-      alert(e?.message ?? 'ייצוא DOCX נכשל');
+    exportDamagesToDocx(sheet, totals, after, attorneyFeeAndGross, lang).catch((e) => {
+      alert(e?.message ?? (lang === 'he' ? 'ייצוא DOCX נכשל' : 'DOCX export failed'));
     });
   };
 
