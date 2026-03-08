@@ -7,25 +7,10 @@ import { requireAuth } from '../middleware/auth';
 import { ensureUserRecord } from '../services/prisma';
 import { config } from '../services/env';
 
-const router = Router();
-router.use(generalAuthLimiter);
 const COOKIE_NAME = 'lm_access_token';
 
 const AUTH_LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const AUTH_LOGIN_RETRY_SECONDS = Math.ceil(AUTH_LOGIN_WINDOW_MS / 1000);
-// Rate limiting for login - prevent brute force attacks
-const loginLimiter = rateLimit({
-  windowMs: AUTH_LOGIN_WINDOW_MS,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  skipSuccessfulRequests: true,
-  handler: (req, res) => {
-    res.setHeader('Retry-After', String(AUTH_LOGIN_RETRY_SECONDS));
-    res.status(429).json({ error: 'rate_limited', retryAfterSeconds: AUTH_LOGIN_RETRY_SECONDS });
-    console.warn('[rate-limit] auth/login 429', { ip: req.ip });
-  },
-});
 
 // General auth routes (e.g. /me, /logout): 10 per minute per IP
 const generalAuthLimiter = rateLimit({
@@ -40,6 +25,23 @@ const generalAuthLimiter = rateLimit({
     console.warn('[rate-limit] auth 429', { ip: req.ip });
   },
 });
+
+// Rate limiting for login - prevent brute force attacks
+const loginLimiter = rateLimit({
+  windowMs: AUTH_LOGIN_WINDOW_MS,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  handler: (req, res) => {
+    res.setHeader('Retry-After', String(AUTH_LOGIN_RETRY_SECONDS));
+    res.status(429).json({ error: 'rate_limited', retryAfterSeconds: AUTH_LOGIN_RETRY_SECONDS });
+    console.warn('[rate-limit] auth/login 429', { ip: req.ip });
+  },
+});
+
+const router = Router();
+router.use(generalAuthLimiter);
 
 // Sanitize string inputs - remove control characters and trim
 const sanitizeString = (str: string): string => {
