@@ -7,6 +7,7 @@ import ExportForWordModal from './ExportForWordModal';
 import type { ExportPayload } from '../utils/exportForWordHtml';
 import { useLang } from '../context/LangContext';
 import { calcNetTotals } from '../utils/netCalc';
+import { t } from '../utils/calcI18n';
 import SanityCheckPanel from './SanityCheckPanel';
 import QuestionnaireModal from './QuestionnaireModal';
 import ScenariosPanel from './ScenariosPanel';
@@ -207,6 +208,9 @@ const validateImportedSheet = (parsed: unknown): parsed is { version: number; ti
 
 const MAX_UNDO = 50;
 
+type ViewMode = 'full' | 'defendantOnly';
+type ColumnId = 'claimant' | 'defendant' | 'average';
+
 const DamagesCalculator: React.FC = () => {
   const importRef = useRef<HTMLInputElement | null>(null);
   const [storageSaveError, setStorageSaveError] = useState<string | null>(null);
@@ -217,6 +221,7 @@ const DamagesCalculator: React.FC = () => {
   const [newTemplateName, setNewTemplateName] = useState('');
   const [newTemplateColor, setNewTemplateColor] = useState('#0ea5e9');
   const [savedTemplates, setSavedTemplates] = useState<TemplateItem[]>(() => getSavedTemplates());
+  const [viewMode, setViewMode] = useState<ViewMode>('full');
 
   const pastRef = useRef<Sheet[]>([]);
   const futureRef = useRef<Sheet[]>([]);
@@ -444,21 +449,31 @@ const DamagesCalculator: React.FC = () => {
     return { plaintiff, defendant, avg };
   }, [sheet.contributoryNegligencePercent, sheet.reductions, totals.avgNet, totals.defendantNet, totals.plaintiffNet]);
 
+  const activeColumns = useMemo((): ColumnId[] => {
+    return viewMode === 'defendantOnly' ? ['defendant'] : ['claimant', 'defendant', 'average'];
+  }, [viewMode]);
+
   const attorneyFeeAndGross = useMemo(() => {
     const pct = clampPercent(sheet.attorneyFeePercent) / 100;
-    const attorneyFeePlaintiff = totals.plaintiffNet * pct;
-    const attorneyFeeAvg = totals.avgNet * pct;
     const expenses = safeNumber(sheet.plaintiffExpenses);
+    const compensationNetPlaintiff = after.plaintiff.afterAll;
+    const compensationNetDefendant = after.defendant.afterAll;
+    const compensationNetAvg = after.avg.afterAll;
+    const attorneyFeePlaintiff = Math.round(compensationNetPlaintiff * pct);
+    const attorneyFeeAvg = Math.round(compensationNetAvg * pct);
     return {
       attorneyFeePlaintiff,
       attorneyFeeDefendant: 0,
       attorneyFeeAvg,
       plaintiffExpenses: expenses,
-      grossPlaintiff: totals.plaintiffNet + attorneyFeePlaintiff + expenses,
-      grossDefendant: totals.defendantNet,
-      grossAvg: totals.avgNet + attorneyFeeAvg + expenses,
+      compensationNetPlaintiff,
+      compensationNetDefendant,
+      compensationNetAvg,
+      grossPlaintiff: compensationNetPlaintiff + attorneyFeePlaintiff + expenses,
+      grossDefendant: compensationNetDefendant,
+      grossAvg: compensationNetAvg + attorneyFeeAvg + expenses,
     };
-  }, [sheet.attorneyFeePercent, sheet.plaintiffExpenses, totals.plaintiffNet, totals.defendantNet, totals.avgNet]);
+  }, [sheet.attorneyFeePercent, sheet.plaintiffExpenses, after.plaintiff.afterAll, after.defendant.afterAll, after.avg.afterAll]);
 
   const updateRow = (id: string, patch: Partial<HeadRow>) => {
     setSheetWithHistory((prev) => ({
@@ -805,6 +820,7 @@ const DamagesCalculator: React.FC = () => {
   const { lang, setLang } = useLang();
   const [exportForWordOpen, setExportForWordOpen] = useState(false);
   const [questionnaireOpen, setQuestionnaireOpen] = useState(false);
+  const showColumn = (col: ColumnId): boolean => activeColumns.includes(col);
   const exportForWordPayload: ExportPayload = useMemo(
     () => ({
       sheet: {
@@ -820,8 +836,9 @@ const DamagesCalculator: React.FC = () => {
       after,
       attorneyFeeAndGross,
       defendantAmounts,
+      viewMode,
     }),
-    [sheet, totals, after, attorneyFeeAndGross, defendantAmounts]
+    [sheet, totals, after, attorneyFeeAndGross, defendantAmounts, viewMode]
   );
 
   const applySanityPatch = useCallback(
@@ -873,6 +890,23 @@ const DamagesCalculator: React.FC = () => {
             </span>
           </div>
           <p className="text-xs text-slate-light">טבלה דינמית · תובע/נתבע/ממוצע · הפחתות באחוזים · שמירה מקומית</p>
+          <div className="flex items-center gap-2 flex-wrap mt-1">
+            <span className="text-xs text-slate-light">{lang === 'he' ? 'תצוגה:' : 'View:'}</span>
+            <button
+              type="button"
+              onClick={() => setViewMode('full')}
+              className={`px-2 py-1 rounded text-xs font-medium ${viewMode === 'full' ? 'bg-navy text-gold' : 'bg-pearl text-slate'}`}
+            >
+              {t('viewFull', lang)}
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('defendantOnly')}
+              className={`px-2 py-1 rounded text-xs font-medium ${viewMode === 'defendantOnly' ? 'bg-navy text-gold' : 'bg-pearl text-slate'}`}
+            >
+              {t('viewDefendantOnly', lang)}
+            </button>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn-outline text-sm px-4 py-2" onClick={undo} disabled={past.length === 0} title="בטל (Ctrl+Z)">
@@ -1043,9 +1077,9 @@ const DamagesCalculator: React.FC = () => {
                   <th className="text-right px-3 py-2 border-b border-pearl">כלול</th>
                   <th className="text-right px-3 py-2 border-b border-pearl">סוג</th>
                   <th className="text-right px-3 py-2 border-b border-pearl">ראש נזק</th>
-                  <th className="text-right px-3 py-2 border-b border-pearl">טענות תובע (₪)</th>
-                  <th className="text-right px-3 py-2 border-b border-pearl">טענות נתבע (₪)</th>
-                  <th className="text-right px-3 py-2 border-b border-pearl">ממוצע (₪)</th>
+                  {showColumn('claimant') && <th className="text-right px-3 py-2 border-b border-pearl">{t('claimant', lang)} (₪)</th>}
+                  {showColumn('defendant') && <th className="text-right px-3 py-2 border-b border-pearl">{t('defendant', lang)} (₪)</th>}
+                  {showColumn('average') && <th className="text-right px-3 py-2 border-b border-pearl">{t('average', lang)} (₪)</th>}
                   <th className="text-right px-3 py-2 border-b border-pearl">פעולות</th>
                 </tr>
               </thead>
@@ -1080,29 +1114,35 @@ const DamagesCalculator: React.FC = () => {
                           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLElement).blur(); } if (e.key === 'Escape') (e.target as HTMLElement).blur(); }}
                         />
                       </td>
-                      <td className="px-3 py-2 border-b border-pearl">
-                        <input
-                          type="number"
-                          className="w-44 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
-                          value={r.plaintiff}
-                          onChange={(e) => updateRow(r.id, { plaintiff: safeNumber(e.target.value) })}
-                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLElement).blur(); } if (e.key === 'Escape') (e.target as HTMLElement).blur(); }}
-                        />
-                      </td>
-                      <td className="px-3 py-2 border-b border-pearl">
-                        <input
-                          type="number"
-                          className="w-44 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
-                          value={r.defendant}
-                          onChange={(e) => updateRow(r.id, { defendant: safeNumber(e.target.value) })}
-                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLElement).blur(); } if (e.key === 'Escape') (e.target as HTMLElement).blur(); }}
-                        />
-                      </td>
-                      <td className="px-3 py-2 border-b border-pearl">
-                        <div className="w-44 rounded-card bg-pearl/60 border border-pearl p-2 text-sm text-navy">
-                          {formatILS(avg)}
-                        </div>
-                      </td>
+                      {showColumn('claimant') && (
+                        <td className="px-3 py-2 border-b border-pearl">
+                          <input
+                            type="number"
+                            className="w-44 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                            value={r.plaintiff}
+                            onChange={(e) => updateRow(r.id, { plaintiff: safeNumber(e.target.value) })}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLElement).blur(); } if (e.key === 'Escape') (e.target as HTMLElement).blur(); }}
+                          />
+                        </td>
+                      )}
+                      {showColumn('defendant') && (
+                        <td className="px-3 py-2 border-b border-pearl">
+                          <input
+                            type="number"
+                            className="w-44 rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                            value={r.defendant}
+                            onChange={(e) => updateRow(r.id, { defendant: safeNumber(e.target.value) })}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLElement).blur(); } if (e.key === 'Escape') (e.target as HTMLElement).blur(); }}
+                          />
+                        </td>
+                      )}
+                      {showColumn('average') && (
+                        <td className="px-3 py-2 border-b border-pearl">
+                          <div className="w-44 rounded-card bg-pearl/60 border border-pearl p-2 text-sm text-navy">
+                            {formatILS(avg)}
+                          </div>
+                        </td>
+                      )}
                       <td className="px-3 py-2 border-b border-pearl">
                         <button
                           type="button"
@@ -1122,52 +1162,71 @@ const DamagesCalculator: React.FC = () => {
                   <td className="px-3 py-3" />
                   <td className="px-3 py-3" />
                   <td className="px-3 py-3 font-semibold">סה״כ ראשי נזק</td>
-                  <td className="px-3 py-3 font-semibold">{formatILS(totals.plaintiffAdd)}</td>
-                  <td className="px-3 py-3 font-semibold">{formatILS(totals.defendantAdd)}</td>
-                  <td className="px-3 py-3 font-semibold">{formatILS(totals.avgAdd)}</td>
+                  {showColumn('claimant') && <td className="px-3 py-3 font-semibold">{formatILS(totals.plaintiffAdd)}</td>}
+                  {showColumn('defendant') && <td className="px-3 py-3 font-semibold">{formatILS(totals.defendantAdd)}</td>}
+                  {showColumn('average') && <td className="px-3 py-3 font-semibold">{formatILS(totals.avgAdd)}</td>}
                   <td className="px-3 py-3" />
                 </tr>
                 <tr>
                   <td className="px-3 py-3" />
                   <td className="px-3 py-3" />
                   <td className="px-3 py-3 font-semibold text-slate">קיזוזים (למשל מל״ל)</td>
-                  <td className="px-3 py-3 font-semibold text-slate">{formatILS(totals.plaintiffDeduct)}</td>
-                  <td className="px-3 py-3 font-semibold text-slate">{formatILS(totals.defendantDeduct)}</td>
-                  <td className="px-3 py-3 font-semibold text-slate">{formatILS(totals.avgDeduct)}</td>
+                  {showColumn('claimant') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(totals.plaintiffDeduct)}</td>}
+                  {showColumn('defendant') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(totals.defendantDeduct)}</td>}
+                  {showColumn('average') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(totals.avgDeduct)}</td>}
                   <td className="px-3 py-3" />
                 </tr>
                 <tr>
                   <td className="px-3 py-3" />
                   <td className="px-3 py-3" />
                   <td className="px-3 py-3 font-semibold">סה״כ נטו</td>
-                  <td className="px-3 py-3 font-semibold">{formatILS(totals.plaintiffNet)}</td>
-                  <td className="px-3 py-3 font-semibold">{formatILS(totals.defendantNet)}</td>
-                  <td className="px-3 py-3 font-semibold">{formatILS(totals.avgNet)}</td>
+                  {showColumn('claimant') && <td className="px-3 py-3 font-semibold">{formatILS(totals.plaintiffNet)}</td>}
+                  {showColumn('defendant') && <td className="px-3 py-3 font-semibold">{formatILS(totals.defendantNet)}</td>}
+                  {showColumn('average') && <td className="px-3 py-3 font-semibold">{formatILS(totals.avgNet)}</td>}
+                  <td className="px-3 py-3" />
+                </tr>
+                <tr className="bg-pearl/30">
+                  <td className="px-3 py-3" colSpan={3}>{t('totalCompensationNet', lang)}</td>
+                  {showColumn('claimant') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.compensationNetPlaintiff)}</td>}
+                  {showColumn('defendant') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.compensationNetDefendant)}</td>}
+                  {showColumn('average') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.compensationNetAvg)}</td>}
                   <td className="px-3 py-3" />
                 </tr>
                 <tr className="bg-pearl/30">
                   <td className="px-3 py-3" colSpan={3} />
-                  <td className="px-3 py-3 font-semibold text-slate">שכ״ט ב״כ התובע</td>
-                  <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.attorneyFeePlaintiff)}</td>
-                  <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.attorneyFeeDefendant)}</td>
-                  <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.attorneyFeeAvg)}</td>
+                  {showColumn('claimant') && <td className="px-3 py-3 font-semibold text-slate">{t('plaintiffSolicitorFee', lang)} ({sheet.attorneyFeePercent}%)</td>}
+                  {showColumn('defendant') && <td className="px-3 py-3 font-semibold text-slate">—</td>}
+                  {showColumn('average') && <td className="px-3 py-3 font-semibold text-slate">{t('plaintiffSolicitorFee', lang)} ({sheet.attorneyFeePercent}%)</td>}
                   <td className="px-3 py-3" />
                 </tr>
                 <tr className="bg-pearl/30">
                   <td className="px-3 py-3" colSpan={3} />
-                  <td className="px-3 py-3 font-semibold text-slate">הוצאות תובע</td>
-                  <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.plaintiffExpenses)}</td>
-                  <td className="px-3 py-3 font-semibold text-slate">—</td>
-                  <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.plaintiffExpenses)}</td>
+                  {showColumn('claimant') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.attorneyFeePlaintiff)}</td>}
+                  {showColumn('defendant') && <td className="px-3 py-3 font-semibold text-slate">—</td>}
+                  {showColumn('average') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.attorneyFeeAvg)}</td>}
+                  <td className="px-3 py-3" />
+                </tr>
+                <tr className="bg-pearl/30">
+                  <td className="px-3 py-3" colSpan={3} />
+                  {showColumn('claimant') && <td className="px-3 py-3 font-semibold text-slate">{t('plaintiffExpenses', lang)}</td>}
+                  {showColumn('defendant') && <td className="px-3 py-3 font-semibold text-slate">—</td>}
+                  {showColumn('average') && <td className="px-3 py-3 font-semibold text-slate">{t('plaintiffExpenses', lang)}</td>}
+                  <td className="px-3 py-3" />
+                </tr>
+                <tr className="bg-pearl/30">
+                  <td className="px-3 py-3" colSpan={3} />
+                  {showColumn('claimant') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.plaintiffExpenses)}</td>}
+                  {showColumn('defendant') && <td className="px-3 py-3 font-semibold text-slate">—</td>}
+                  {showColumn('average') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.plaintiffExpenses)}</td>}
                   <td className="px-3 py-3" />
                 </tr>
                 <tr>
                   <td className="px-3 py-3" />
                   <td className="px-3 py-3" />
-                  <td className="px-3 py-3 font-bold bg-gold/20">סה״כ ברוטו</td>
-                  <td className="px-3 py-3 font-bold bg-gold/20">{formatILS(attorneyFeeAndGross.grossPlaintiff)}</td>
-                  <td className="px-3 py-3 font-bold bg-gold/20">{formatILS(attorneyFeeAndGross.grossDefendant)}</td>
-                  <td className="px-3 py-3 font-bold bg-gold/20">{formatILS(attorneyFeeAndGross.grossAvg)}</td>
+                  <td className="px-3 py-3 font-bold bg-gold/20">{t('grandTotalPayable', lang)}</td>
+                  {showColumn('claimant') && <td className="px-3 py-3 font-bold bg-gold/20">{formatILS(attorneyFeeAndGross.grossPlaintiff)}</td>}
+                  {showColumn('defendant') && <td className="px-3 py-3 font-bold bg-gold/20">{formatILS(attorneyFeeAndGross.grossDefendant)}</td>}
+                  {showColumn('average') && <td className="px-3 py-3 font-bold bg-gold/20">{formatILS(attorneyFeeAndGross.grossAvg)}</td>}
                   <td className="px-3 py-3" />
                 </tr>
               </tfoot>
@@ -1269,33 +1328,39 @@ const DamagesCalculator: React.FC = () => {
           </div>
           <div className="card-underline" />
           <div className="card-body space-y-3 text-sm">
-            <div className="mini-card">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold">תרחיש תובע</span>
-                <span className="badge-strong">₪ {formatILS(after.plaintiff.afterAll)}</span>
+            {showColumn('claimant') && (
+              <div className="mini-card">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold">{t('claimant', lang)}</span>
+                  <span className="badge-strong">₪ {formatILS(after.plaintiff.afterAll)}</span>
+                </div>
+                <p className="text-xs text-slate-light mt-1">
+                  נטו לפני: ₪ {formatILS(totals.plaintiffNet)} · אחרי אשם תורם: ₪ {formatILS(after.plaintiff.afterContrib)} · פקטור הפחתות: {after.plaintiff.reductionsFactor.toFixed(3)}
+                </p>
               </div>
-              <p className="text-xs text-slate-light mt-1">
-                נטו לפני: ₪ {formatILS(totals.plaintiffNet)} · אחרי אשם תורם: ₪ {formatILS(after.plaintiff.afterContrib)} · פקטור הפחתות: {after.plaintiff.reductionsFactor.toFixed(3)}
-              </p>
-            </div>
-            <div className="mini-card">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold">תרחיש נתבע</span>
-                <span className="badge-muted">₪ {formatILS(after.defendant.afterAll)}</span>
+            )}
+            {showColumn('defendant') && (
+              <div className="mini-card">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold">{t('defendant', lang)}</span>
+                  <span className="badge-muted">₪ {formatILS(after.defendant.afterAll)}</span>
+                </div>
+                <p className="text-xs text-slate-light mt-1">
+                  נטו לפני: ₪ {formatILS(totals.defendantNet)} · אחרי אשם תורם: ₪ {formatILS(after.defendant.afterContrib)} · פקטור הפחתות: {after.defendant.reductionsFactor.toFixed(3)}
+                </p>
               </div>
-              <p className="text-xs text-slate-light mt-1">
-                נטו לפני: ₪ {formatILS(totals.defendantNet)} · אחרי אשם תורם: ₪ {formatILS(after.defendant.afterContrib)} · פקטור הפחתות: {after.defendant.reductionsFactor.toFixed(3)}
-              </p>
-            </div>
-            <div className="mini-card">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold">תרחיש ממוצע</span>
-                <span className="badge-warning">₪ {formatILS(after.avg.afterAll)}</span>
+            )}
+            {showColumn('average') && (
+              <div className="mini-card">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold">{t('average', lang)}</span>
+                  <span className="badge-warning">₪ {formatILS(after.avg.afterAll)}</span>
+                </div>
+                <p className="text-xs text-slate-light mt-1">
+                  נטו לפני: ₪ {formatILS(totals.avgNet)} · אחרי אשם תורם: ₪ {formatILS(after.avg.afterContrib)} · פקטור הפחתות: {after.avg.reductionsFactor.toFixed(3)}
+                </p>
               </div>
-              <p className="text-xs text-slate-light mt-1">
-                נטו לפני: ₪ {formatILS(totals.avgNet)} · אחרי אשם תורם: ₪ {formatILS(after.avg.afterContrib)} · פקטור הפחתות: {after.avg.reductionsFactor.toFixed(3)}
-              </p>
-            </div>
+            )}
           </div>
         </div>
       </div>
@@ -1313,30 +1378,36 @@ const DamagesCalculator: React.FC = () => {
           <div>
             <p className="text-xs font-semibold text-slate-light mb-2">תרחישים (לאחר הפחתות)</p>
             <div className="flex gap-4 items-end justify-end h-24" dir="ltr">
-              <div className="flex-1 flex flex-col items-center gap-1">
-                <div
-                  className="w-full bg-navy rounded-t min-h-[8px] transition-all"
-                  style={{ height: `${Math.min(100, (after.plaintiff.afterAll / (Math.max(after.plaintiff.afterAll, after.defendant.afterAll, after.avg.afterAll, 1) || 1)) * 100)}%` }}
-                  title={`תובע: ₪${formatILS(after.plaintiff.afterAll)}`}
-                />
-                <span className="text-[11px] text-slate">תובע</span>
-              </div>
-              <div className="flex-1 flex flex-col items-center gap-1">
-                <div
-                  className="w-full bg-slate-400 rounded-t min-h-[8px] transition-all"
-                  style={{ height: `${Math.min(100, (after.defendant.afterAll / (Math.max(after.plaintiff.afterAll, after.defendant.afterAll, after.avg.afterAll, 1) || 1)) * 100)}%` }}
-                  title={`נתבע: ₪${formatILS(after.defendant.afterAll)}`}
-                />
-                <span className="text-[11px] text-slate">נתבע</span>
-              </div>
-              <div className="flex-1 flex flex-col items-center gap-1">
-                <div
-                  className="w-full bg-gold rounded-t min-h-[8px] transition-all"
-                  style={{ height: `${Math.min(100, (after.avg.afterAll / (Math.max(after.plaintiff.afterAll, after.defendant.afterAll, after.avg.afterAll, 1) || 1)) * 100)}%` }}
-                  title={`ממוצע: ₪${formatILS(after.avg.afterAll)}`}
-                />
-                <span className="text-[11px] text-slate">ממוצע</span>
-              </div>
+              {showColumn('claimant') && (
+                <div className="flex-1 flex flex-col items-center gap-1">
+                  <div
+                    className="w-full bg-navy rounded-t min-h-[8px] transition-all"
+                    style={{ height: `${Math.min(100, (after.plaintiff.afterAll / (Math.max(after.plaintiff.afterAll, after.defendant.afterAll, after.avg.afterAll, 1) || 1)) * 100)}%` }}
+                    title={`${t('claimant', lang)}: ₪${formatILS(after.plaintiff.afterAll)}`}
+                  />
+                  <span className="text-[11px] text-slate">{t('claimant', lang)}</span>
+                </div>
+              )}
+              {showColumn('defendant') && (
+                <div className="flex-1 flex flex-col items-center gap-1">
+                  <div
+                    className="w-full bg-slate-400 rounded-t min-h-[8px] transition-all"
+                    style={{ height: `${Math.min(100, (after.defendant.afterAll / (Math.max(after.plaintiff.afterAll, after.defendant.afterAll, after.avg.afterAll, 1) || 1)) * 100)}%` }}
+                    title={`${t('defendant', lang)}: ₪${formatILS(after.defendant.afterAll)}`}
+                  />
+                  <span className="text-[11px] text-slate">{t('defendant', lang)}</span>
+                </div>
+              )}
+              {showColumn('average') && (
+                <div className="flex-1 flex flex-col items-center gap-1">
+                  <div
+                    className="w-full bg-gold rounded-t min-h-[8px] transition-all"
+                    style={{ height: `${Math.min(100, (after.avg.afterAll / (Math.max(after.plaintiff.afterAll, after.defendant.afterAll, after.avg.afterAll, 1) || 1)) * 100)}%` }}
+                    title={`${t('average', lang)}: ₪${formatILS(after.avg.afterAll)}`}
+                  />
+                  <span className="text-[11px] text-slate">{t('average', lang)}</span>
+                </div>
+              )}
             </div>
           </div>
           {activeDefendants.length > 0 && (
@@ -1457,48 +1528,54 @@ const DamagesCalculator: React.FC = () => {
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">
-            <div className="mini-card">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold">תרחיש תובע</span>
-                <span className="badge-strong">₪ {formatILS(after.plaintiff.afterAll)}</span>
+            {showColumn('claimant') && (
+              <div className="mini-card">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold">{t('claimant', lang)}</span>
+                  <span className="badge-strong">₪ {formatILS(after.plaintiff.afterAll)}</span>
+                </div>
+                <div className="mt-2 space-y-1 text-xs text-slate">
+                  {defendantAmounts.plaintiff.map((x) => (
+                    <div key={`p-${x.id}`} className="flex items-center justify-between">
+                      <span>{x.name} ({formatILS(x.percent)}%)</span>
+                      <span>₪ {formatILS(x.amount)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="mt-2 space-y-1 text-xs text-slate">
-                {defendantAmounts.plaintiff.map((x) => (
-                  <div key={`p-${x.id}`} className="flex items-center justify-between">
-                    <span>{x.name} ({formatILS(x.percent)}%)</span>
-                    <span>₪ {formatILS(x.amount)}</span>
-                  </div>
-                ))}
+            )}
+            {showColumn('defendant') && (
+              <div className="mini-card">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold">{t('defendant', lang)}</span>
+                  <span className="badge-muted">₪ {formatILS(after.defendant.afterAll)}</span>
+                </div>
+                <div className="mt-2 space-y-1 text-xs text-slate">
+                  {defendantAmounts.defendant.map((x) => (
+                    <div key={`d-${x.id}`} className="flex items-center justify-between">
+                      <span>{x.name} ({formatILS(x.percent)}%)</span>
+                      <span>₪ {formatILS(x.amount)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div className="mini-card">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold">תרחיש נתבע</span>
-                <span className="badge-muted">₪ {formatILS(after.defendant.afterAll)}</span>
+            )}
+            {showColumn('average') && (
+              <div className="mini-card">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold">{t('average', lang)}</span>
+                  <span className="badge-warning">₪ {formatILS(after.avg.afterAll)}</span>
+                </div>
+                <div className="mt-2 space-y-1 text-xs text-slate">
+                  {defendantAmounts.avg.map((x) => (
+                    <div key={`a-${x.id}`} className="flex items-center justify-between">
+                      <span>{x.name} ({formatILS(x.percent)}%)</span>
+                      <span>₪ {formatILS(x.amount)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="mt-2 space-y-1 text-xs text-slate">
-                {defendantAmounts.defendant.map((x) => (
-                  <div key={`d-${x.id}`} className="flex items-center justify-between">
-                    <span>{x.name} ({formatILS(x.percent)}%)</span>
-                    <span>₪ {formatILS(x.amount)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="mini-card">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold">תרחיש ממוצע</span>
-                <span className="badge-warning">₪ {formatILS(after.avg.afterAll)}</span>
-              </div>
-              <div className="mt-2 space-y-1 text-xs text-slate">
-                {defendantAmounts.avg.map((x) => (
-                  <div key={`a-${x.id}`} className="flex items-center justify-between">
-                    <span>{x.name} ({formatILS(x.percent)}%)</span>
-                    <span>₪ {formatILS(x.amount)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </div>

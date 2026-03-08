@@ -86,6 +86,11 @@ const dict: Record<Lang, Record<string, string>> = {
     previewBeforeAfter: 'לפני → אחרי',
     applyFix: 'החל תיקון',
     niiLabel: 'מל״ל',
+    viewFull: 'תצוגה מלאה',
+    viewDefendantOnly: 'נתבע בלבד',
+    totalCompensationNet: 'סה״כ פיצוי (נטו)',
+    plaintiffSolicitorFee: 'שכ״ט עו״ד תובע',
+    grandTotalPayable: 'סה״כ לתשלום',
   },
   'en-GB': {
     sanityCheck: 'Sanity Check',
@@ -158,6 +163,11 @@ const dict: Record<Lang, Record<string, string>> = {
     previewBeforeAfter: 'Before → After',
     applyFix: 'Apply fix',
     niiLabel: 'NII',
+    viewFull: 'Full view',
+    viewDefendantOnly: 'Defendant only',
+    totalCompensationNet: 'Total compensation (net)',
+    plaintiffSolicitorFee: 'Plaintiff solicitor fee',
+    grandTotalPayable: 'Grand total payable',
   },
 };
 

@@ -56,6 +56,8 @@ export type ExportPayload = {
   defendantAmounts: {
     avg: Array<{ id: string; name: string; percent: number; amount: number }>;
   };
+  /** When 'defendantOnly', tables show only defendant column. */
+  viewMode?: 'full' | 'defendantOnly';
 };
 
 const tableStyle =
@@ -103,6 +105,7 @@ export function buildWordHtml(
 
   const activeRows = payload.sheet.rows.filter((r) => r.enabled);
   const calcAvg = (p: number, d: number) => (p + d) / 2;
+  const defendantOnly = payload.viewMode === 'defendantOnly';
 
   let html = `<div style="direction:${dir};font-family:Calibri,Arial,sans-serif;font-size:11pt;padding:12px;" dir="${dir}">`;
   html += `<p style="font-size:14pt;font-weight:bold;margin-bottom:12px;">${escapeHtml(payload.sheet.title || L.title)}</p>`;
@@ -113,23 +116,31 @@ export function buildWordHtml(
   html += '<thead><tr>';
   html += cell(L.item, { header: true, dir });
   html += cell(L.type, { header: true, dir });
-  html += cell(L.claimant + ' (₪)', { header: true, alignRight: true });
+  if (!defendantOnly) {
+    html += cell(L.claimant + ' (₪)', { header: true, alignRight: true });
+  }
   html += cell(L.defendant + ' (₪)', { header: true, alignRight: true });
-  html += cell(L.average + ' (₪)', { header: true, alignRight: true });
+  if (!defendantOnly) {
+    html += cell(L.average + ' (₪)', { header: true, alignRight: true });
+  }
   html += '</tr></thead><tbody>';
   for (const r of activeRows) {
     const avg = calcAvg(r.plaintiff, r.defendant);
     html += '<tr>';
     html += cell(r.name, { dir });
     html += cell(r.kind === 'deduct' ? L.deduct : L.add, { dir });
-    html += cell(formatCurrency(lang, r.plaintiff), { alignRight: true });
+    if (!defendantOnly) {
+      html += cell(formatCurrency(lang, r.plaintiff), { alignRight: true });
+    }
     html += cell(formatCurrency(lang, r.defendant), { alignRight: true });
-    html += cell(formatCurrency(lang, avg), { alignRight: true });
+    if (!defendantOnly) {
+      html += cell(formatCurrency(lang, avg), { alignRight: true });
+    }
     html += '</tr>';
   }
   html += '</tbody></table>';
 
-  // B) Totals Summary
+  // B) Totals Summary — compensation net, fee, expenses, grand total (additive)
   html += `<p style="font-weight:bold;margin-top:16px;">${L.summaryTitle}</p>`;
   html += `<table style="${tableStyle}">`;
   const { totals, after, attorneyFeeAndGross } = payload;
@@ -138,23 +149,31 @@ export function buildWordHtml(
     [L.deductions, formatCurrency(lang, totals.plaintiffDeduct), formatCurrency(lang, totals.defendantDeduct), formatCurrency(lang, totals.avgDeduct)],
     [L.netTotal, formatCurrency(lang, totals.plaintiffNet), formatCurrency(lang, totals.defendantNet), formatCurrency(lang, totals.avgNet)],
     [L.contributoryNegligence, payload.sheet.contributoryNegligencePercent + '%', payload.sheet.contributoryNegligencePercent + '%', payload.sheet.contributoryNegligencePercent + '%'],
+    [L.totalCompensationNet, formatCurrency(lang, after.plaintiff.afterAll), formatCurrency(lang, after.defendant.afterAll), formatCurrency(lang, after.avg.afterAll)],
     [L.attorneyFee, formatCurrency(lang, attorneyFeeAndGross.attorneyFeePlaintiff), formatCurrency(lang, attorneyFeeAndGross.attorneyFeeDefendant), formatCurrency(lang, attorneyFeeAndGross.attorneyFeeAvg)],
     [L.plaintiffExpenses, formatCurrency(lang, attorneyFeeAndGross.plaintiffExpenses), '—', formatCurrency(lang, attorneyFeeAndGross.plaintiffExpenses)],
-    [L.grossTotal, formatCurrency(lang, attorneyFeeAndGross.grossPlaintiff), formatCurrency(lang, attorneyFeeAndGross.grossDefendant), formatCurrency(lang, attorneyFeeAndGross.grossAvg)],
-    [L.totalAfter, formatCurrency(lang, after.plaintiff.afterAll), formatCurrency(lang, after.defendant.afterAll), formatCurrency(lang, after.avg.afterAll)],
+    [L.grandTotalPayable, formatCurrency(lang, attorneyFeeAndGross.grossPlaintiff), formatCurrency(lang, attorneyFeeAndGross.grossDefendant), formatCurrency(lang, attorneyFeeAndGross.grossAvg)],
   ];
   html += '<thead><tr>';
   html += cell('', { header: true, dir });
-  html += cell(L.claimant, { header: true, alignRight: true });
+  if (!defendantOnly) {
+    html += cell(L.claimant, { header: true, alignRight: true });
+  }
   html += cell(L.defendant, { header: true, alignRight: true });
-  html += cell(L.average, { header: true, alignRight: true });
+  if (!defendantOnly) {
+    html += cell(L.average, { header: true, alignRight: true });
+  }
   html += '</tr></thead><tbody>';
   for (const [label, p, d, a] of rows) {
     html += '<tr>';
     html += cell(label, { dir });
-    html += cell(p, { alignRight: true });
+    if (!defendantOnly) {
+      html += cell(p, { alignRight: true });
+    }
     html += cell(d, { alignRight: true });
-    html += cell(a, { alignRight: true });
+    if (!defendantOnly) {
+      html += cell(a, { alignRight: true });
+    }
     html += '</tr>';
   }
   html += '</tbody></table>';
@@ -208,13 +227,25 @@ export function buildWordPlainText(
   const fmt = (n: number) => formatCurrency(lang, n);
   const activeRows = payload.sheet.rows.filter((r) => r.enabled);
   const calcAvg = (p: number, d: number) => (p + d) / 2;
+  const defendantOnly = payload.viewMode === 'defendantOnly';
   const lines: string[] = [payload.sheet.title || L.title, '', L.breakdownTitle];
   for (const r of activeRows) {
     const avg = calcAvg(r.plaintiff, r.defendant);
-    lines.push(`${r.name}\t${fmt(r.plaintiff)}\t${fmt(r.defendant)}\t${fmt(avg)}`);
+    if (defendantOnly) {
+      lines.push(`${r.name}\t${fmt(r.defendant)}`);
+    } else {
+      lines.push(`${r.name}\t${fmt(r.plaintiff)}\t${fmt(r.defendant)}\t${fmt(avg)}`);
+    }
   }
-  lines.push('', L.netTotal, `${fmt(payload.totals.plaintiffNet)}\t${fmt(payload.totals.defendantNet)}\t${fmt(payload.totals.avgNet)}`);
-  lines.push('', L.totalAfter, `${fmt(payload.after.plaintiff.afterAll)}\t${fmt(payload.after.defendant.afterAll)}\t${fmt(payload.after.avg.afterAll)}`);
+  if (defendantOnly) {
+    lines.push('', L.netTotal, fmt(payload.totals.defendantNet));
+    lines.push('', L.totalCompensationNet, fmt(payload.after.defendant.afterAll));
+    lines.push('', L.grandTotalPayable, fmt(payload.attorneyFeeAndGross.grossDefendant));
+  } else {
+    lines.push('', L.netTotal, `${fmt(payload.totals.plaintiffNet)}\t${fmt(payload.totals.defendantNet)}\t${fmt(payload.totals.avgNet)}`);
+    lines.push('', L.totalCompensationNet, `${fmt(payload.after.plaintiff.afterAll)}\t${fmt(payload.after.defendant.afterAll)}\t${fmt(payload.after.avg.afterAll)}`);
+    lines.push('', L.grandTotalPayable, `${fmt(payload.attorneyFeeAndGross.grossPlaintiff)}\t${fmt(payload.attorneyFeeAndGross.grossDefendant)}\t${fmt(payload.attorneyFeeAndGross.grossAvg)}`);
+  }
   if (includeDefendants && payload.defendantAmounts.avg.length > 0) {
     lines.push('', L.defendantsSection);
     for (const d of payload.defendantAmounts.avg) {
