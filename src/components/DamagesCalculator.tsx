@@ -1193,28 +1193,14 @@ const DamagesCalculator: React.FC = () => {
                   <td className="px-3 py-3" />
                 </tr>
                 <tr className="bg-pearl/30">
-                  <td className="px-3 py-3" colSpan={3} />
-                  {showColumn('claimant') && <td className="px-3 py-3 font-semibold text-slate">{t('plaintiffSolicitorFee', lang)} ({sheet.attorneyFeePercent}%)</td>}
-                  {showColumn('defendant') && <td className="px-3 py-3 font-semibold text-slate">—</td>}
-                  {showColumn('average') && <td className="px-3 py-3 font-semibold text-slate">{t('plaintiffSolicitorFee', lang)} ({sheet.attorneyFeePercent}%)</td>}
-                  <td className="px-3 py-3" />
-                </tr>
-                <tr className="bg-pearl/30">
-                  <td className="px-3 py-3" colSpan={3} />
+                  <td className="px-3 py-3 font-semibold text-slate" colSpan={3}>{t('plaintiffSolicitorFee', lang)} ({sheet.attorneyFeePercent}%)</td>
                   {showColumn('claimant') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.attorneyFeePlaintiff)}</td>}
                   {showColumn('defendant') && <td className="px-3 py-3 font-semibold text-slate">—</td>}
                   {showColumn('average') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.attorneyFeeAvg)}</td>}
                   <td className="px-3 py-3" />
                 </tr>
                 <tr className="bg-pearl/30">
-                  <td className="px-3 py-3" colSpan={3} />
-                  {showColumn('claimant') && <td className="px-3 py-3 font-semibold text-slate">{t('plaintiffExpenses', lang)}</td>}
-                  {showColumn('defendant') && <td className="px-3 py-3 font-semibold text-slate">—</td>}
-                  {showColumn('average') && <td className="px-3 py-3 font-semibold text-slate">{t('plaintiffExpenses', lang)}</td>}
-                  <td className="px-3 py-3" />
-                </tr>
-                <tr className="bg-pearl/30">
-                  <td className="px-3 py-3" colSpan={3} />
+                  <td className="px-3 py-3 font-semibold text-slate" colSpan={3}>{t('plaintiffExpenses', lang)}</td>
                   {showColumn('claimant') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.plaintiffExpenses)}</td>}
                   {showColumn('defendant') && <td className="px-3 py-3 font-semibold text-slate">—</td>}
                   {showColumn('average') && <td className="px-3 py-3 font-semibold text-slate">{formatILS(attorneyFeeAndGross.plaintiffExpenses)}</td>}
