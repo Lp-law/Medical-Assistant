@@ -65,7 +65,10 @@ const BookChaptersModal: React.FC<Props> = ({ open, onClose }) => {
             </p>
           )}
           {!loading && !error && chapters.length === 0 && (
-            <p className="text-sm text-slate py-4">לא נמצאו פרקים. הרץ את טעינת הספר בשרת.</p>
+            <div className="text-sm text-slate py-4 space-y-2">
+              <p className="font-medium">טרם נטענו פרקים.</p>
+              <p className="text-xs text-slate-light">כדי שהרשימה תופיע, יש להריץ בשרת את טעינת הספר (פקודה: <code className="bg-pearl/60 px-1 rounded">npm run ingest-book</code> מתוך תיקיית ה-API). אם הרשימה אמורה להיות זמינה – פנה למנהל המערכת.</p>
+            </div>
           )}
           {!loading && chapters.length > 0 && (
             <ul className="space-y-1">

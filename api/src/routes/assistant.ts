@@ -2,12 +2,11 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
-import { requireAuth } from '../middleware/auth';
 import { prisma } from '../services/prisma';
 import { generateSearchQueries, generateAssistantAnswer } from '../services/openAIClient';
 
 const router = Router();
-router.use(requireAuth);
+// גישה ציבורית – העוזר (תשובות מהספר) פועל גם בלי התחברות
 
 const ASSISTANT_WINDOW_MS = 60 * 1000;
 const ASSISTANT_MAX_PER_WINDOW = 10;
