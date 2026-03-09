@@ -69,6 +69,31 @@ const extractQuotedPhrases = (input: string): string[] => {
   return Array.from(new Set(phrases.filter(Boolean)));
 };
 
+const SYNONYM_RULES: Array<{ pattern: RegExp; alternatives: string[] }> = [
+  {
+    pattern: /(עזרת צד שלישי|עזרת צד ג|עזרת צד ג׳|עזרת הזולת|עזרת בן משפחה|עזרת בני משפחה)/i,
+    alternatives: ['עזרת הזולת', 'עזרת צד ג', 'עזרת בן משפחה', 'עזרת בני משפחה'],
+  },
+  {
+    pattern: /(היוון|מקדם היוון|ריבית היוון)/i,
+    alternatives: ['היוון', 'מקדם היוון', 'ריבית היוון'],
+  },
+  {
+    pattern: /(כאב וסבל|נזק לא ממוני)/i,
+    alternatives: ['כאב וסבל', 'נזק לא ממוני'],
+  },
+];
+
+const expandQueriesWithSynonyms = (question: string, baseQueries: string[]): string[] => {
+  const corpus = [question, ...baseQueries].join(' ');
+  const expanded = [...baseQueries];
+  for (const rule of SYNONYM_RULES) {
+    if (!rule.pattern.test(corpus)) continue;
+    expanded.push(...rule.alternatives);
+  }
+  return Array.from(new Set(expanded.map((q) => q.trim()).filter(Boolean))).slice(0, 12);
+};
+
 type AssistantDocumentHit = {
   id: string;
   title: string;
@@ -146,13 +171,14 @@ router.post('/search', assistantSearchLimiter, async (req, res) => {
 
     const queries = await generateSearchQueries(question);
     const quotedPhrases = extractQuotedPhrases(question);
-    const effectiveQueries = [
+    const baseQueries = [
       ...quotedPhrases,
       ...(queries.length ? queries : [question]),
       unwrapQuotedPhrase(question),
     ]
       .map((q) => q.trim())
       .filter(Boolean);
+    const effectiveQueries = expandQueriesWithSynonyms(question, baseQueries);
 
     const hitCounts = new Map<string, { hit: AssistantDocumentHit; score: number }>();
     for (const q of effectiveQueries.slice(0, 5)) {
@@ -200,13 +226,14 @@ router.post('/answer', assistantSearchLimiter, async (req, res) => {
 
     const queries = await generateSearchQueries(question);
     const quotedPhrases = extractQuotedPhrases(question);
-    const effectiveQueries = [
+    const baseQueries = [
       ...quotedPhrases,
       ...(queries.length ? queries : [question]),
       unwrapQuotedPhrase(question),
     ]
       .map((q) => q.trim())
       .filter(Boolean);
+    const effectiveQueries = expandQueriesWithSynonyms(question, baseQueries);
 
     const hitCounts = new Map<string, { hit: AssistantDocumentHit; score: number }>();
     for (const q of effectiveQueries.slice(0, 5)) {
