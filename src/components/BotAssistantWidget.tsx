@@ -100,7 +100,6 @@ const BotAssistantWidget: React.FC<Props> = ({ mode = 'documents', onOpenDocumen
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [categoryKey, setCategoryKey] = useState<BotCategoryKey>('all');
   const [history, setHistory] = useState<ChatTurn[]>([]);
   const [expandedDocId] = useState<string | null>(null);
   const [openingAttachmentId, setOpeningAttachmentId] = useState<string | null>(null);
@@ -121,7 +120,7 @@ const BotAssistantWidget: React.FC<Props> = ({ mode = 'documents', onOpenDocumen
     setError(null);
     try {
       const limit = override?.limit ?? 10;
-      const categoryName = categoryKey === 'all' ? undefined : CATEGORY_NAME[categoryKey];
+      const categoryName = 'תחשיבי נזק'; // תשובות רק מהספר
 
       const now = new Date().toISOString();
       setHistory((prev) => [
@@ -243,9 +242,8 @@ const BotAssistantWidget: React.FC<Props> = ({ mode = 'documents', onOpenDocumen
               <div className="space-y-2">
                 <BotMascot
                   loading={loading}
-                  label={loading ? 'אני מחפש במאגר המסמכים…' : 'שאל שאלה ואני אמצא מסמכים רלוונטיים'}
+                  label={loading ? 'מייצר תשובה מהספר…' : 'שאל שאלה על תחשיבי נזק ואתן תשובה מהספר עם הפניה לפרק'}
                 />
-                <p className="text-xs text-slate">אפשר גם לבחור קטגוריה כדי לצמצם תוצאות.</p>
               </div>
               <button
                 type="button"
@@ -258,36 +256,12 @@ const BotAssistantWidget: React.FC<Props> = ({ mode = 'documents', onOpenDocumen
             </div>
 
             <div className="px-5 py-4 space-y-4">
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCategoryKey('all')}
-                  className={`rounded-full px-3 py-1 text-xs border transition ${
-                    categoryKey === 'all' ? 'bg-navy text-gold border-navy' : 'bg-white border-pearl text-slate'
-                  }`}
-                >
-                  הכל
-                </button>
-                {(Object.keys(CATEGORY_NAME) as Array<Exclude<BotCategoryKey, 'all'>>).map((k) => (
-                  <button
-                    key={k}
-                    type="button"
-                    onClick={() => setCategoryKey(k)}
-                    className={`rounded-full px-3 py-1 text-xs border transition ${
-                      categoryKey === k ? 'bg-navy text-gold border-navy' : 'bg-white border-pearl text-slate'
-                    }`}
-                  >
-                    {CATEGORY_NAME[k]}
-                  </button>
-                ))}
-              </div>
-
               <div className="flex gap-2">
                 <input
                   className="flex-1 rounded-full border border-pearl bg-pearl/60 px-4 py-2 text-sm focus:border-gold focus:ring-1 focus:ring-gold outline-none transition"
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
-                  placeholder="לדוגמה: חוות דעת נוירולוגית על תאונת דרכים + כאב וסבל"
+                  placeholder="שאל במלל חופשי, למשל: מהו היוון? איך מחשבים הפחתה?"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
@@ -302,7 +276,7 @@ const BotAssistantWidget: React.FC<Props> = ({ mode = 'documents', onOpenDocumen
                   className="rounded-full bg-gold text-navy px-4 py-2 text-sm font-semibold hover:bg-gold-light transition disabled:opacity-50 inline-flex items-center gap-2"
                 >
                   <Send className="w-4 h-4" />
-                  {loading ? 'מחפש...' : 'חפש'}
+                  {loading ? 'מייצר תשובה…' : 'שלח'}
                 </button>
               </div>
 
@@ -491,7 +465,7 @@ const BotAssistantWidget: React.FC<Props> = ({ mode = 'documents', onOpenDocumen
 
               {history.length === 0 && (
                 <p className="text-xs text-slate">
-                  טיפ: כתוב משפט אחד עם המילים המרכזיות (אבחנה/מומחה/סוג מסמך/הליך) ולחץ “חפש”.
+                  שאל שאלה במלל חופשי – אתן תשובה מתוך הספר "תחשיבי נזק" ואפנה לפרק הרלוונטי.
                 </p>
               )}
             </div>
