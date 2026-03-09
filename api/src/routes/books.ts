@@ -3,10 +3,9 @@ import path from 'path';
 import fs from 'fs/promises';
 import { createReadStream } from 'fs';
 import { prisma } from '../services/prisma';
-import { requireAuth } from '../middleware/auth';
 
 const router = Router();
-router.use(requireAuth);
+// גישה ציבורית – כפתור "תחשיבי נזק" מוצג גם בלי התחברות
 
 const BOOK_NAME = 'תחשיבי נזק';
 const BOOK_FOLDER_NAME = 'תחשיבי-נזק';
