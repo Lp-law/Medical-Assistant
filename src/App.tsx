@@ -57,7 +57,7 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      <BotAssistantWidget mode="calculator" open={botOpen} onOpenChange={setBotOpen} />
+      <BotAssistantWidget mode="documents" open={botOpen} onOpenChange={setBotOpen} />
     </div>
     </LangProvider>
   );
