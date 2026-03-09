@@ -17,6 +17,12 @@ export interface SearchDocumentsParams {
   q?: string;
   categoryId?: string;
   categoryName?: string;
+  matchMode?: 'all' | 'any';
+  phrase?: string;
+  include?: string[];
+  exclude?: string[];
+  categories?: string[];
+  fieldScope?: 'title' | 'title_summary' | 'all';
   source?: DocumentSourceKey;
   from?: string; // ISO
   to?: string; // ISO
@@ -27,6 +33,16 @@ export interface SearchDocumentsParams {
 export interface SearchDocumentsResponse {
   documents: DocumentRecord[];
   pagination: { limit: number; offset: number; total: number };
+  normalizedQuery?: {
+    q?: string;
+    phrase?: string | null;
+    include?: string[];
+    exclude?: string[];
+    tokens?: string[];
+    matchMode?: 'all' | 'any';
+    fieldScope?: 'title' | 'title_summary' | 'all';
+    categories?: string[];
+  };
 }
 
 export const searchDocuments = async (params: SearchDocumentsParams = {}): Promise<SearchDocumentsResponse> => {
@@ -34,6 +50,12 @@ export const searchDocuments = async (params: SearchDocumentsParams = {}): Promi
   if (params.q) query.set('q', params.q);
   if (params.categoryId) query.set('categoryId', params.categoryId);
   if (params.categoryName) query.set('categoryName', params.categoryName);
+  if (params.matchMode) query.set('matchMode', params.matchMode);
+  if (params.phrase) query.set('phrase', params.phrase);
+  if (params.include?.length) query.set('include', params.include.join(','));
+  if (params.exclude?.length) query.set('exclude', params.exclude.join(','));
+  if (params.categories?.length) query.set('categories', params.categories.join(','));
+  if (params.fieldScope) query.set('fieldScope', params.fieldScope);
   if (params.source) query.set('source', params.source);
   if (params.from) query.set('from', params.from);
   if (params.to) query.set('to', params.to);

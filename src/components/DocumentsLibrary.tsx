@@ -13,6 +13,7 @@ import {
   DOC_TYPES,
 } from '../services/documentsApi';
 import { useAuth } from '../context/AuthContext';
+import { useLang } from '../context/LangContext';
 import { openAttachment } from '../utils/openAttachment';
 import { parseFilenameForUpload } from '../utils/parseFilenameForUpload';
 
@@ -35,6 +36,41 @@ const formatDate = (value?: string | null): string => {
 const MAX_UPLOAD_FILE_MB = 100;
 const MAX_UPLOAD_FILE_BYTES = MAX_UPLOAD_FILE_MB * 1024 * 1024;
 
+const SEARCH_I18N = {
+  he: {
+    advancedSearch: 'חיפוש מתקדם',
+    allWords: 'כל המילים',
+    anyWords: 'חלק מהמילים',
+    phrase: 'ביטוי מדויק',
+    include: 'Include (חייב להופיע)',
+    exclude: 'Exclude (לא יופיע)',
+    categories: 'קטגוריות',
+    fieldScope: 'טווח שדות',
+    scopeTitle: 'כותרת בלבד',
+    scopeTitleSummary: 'כותרת + תקציר',
+    scopeAll: 'הכל',
+    clearFilters: 'נקה מסננים',
+    activeFilters: 'מסננים פעילים',
+    searchAllDocs: 'חיפוש בכל המסמכים',
+  },
+  'en-GB': {
+    advancedSearch: 'Advanced search',
+    allWords: 'All words',
+    anyWords: 'Any words',
+    phrase: 'Exact phrase',
+    include: 'Include terms',
+    exclude: 'Exclude terms',
+    categories: 'Categories',
+    fieldScope: 'Field scope',
+    scopeTitle: 'Title only',
+    scopeTitleSummary: 'Title + summary',
+    scopeAll: 'All fields',
+    clearFilters: 'Clear filters',
+    activeFilters: 'Active filters',
+    searchAllDocs: 'Search all documents',
+  },
+} as const;
+
 type Props = {
   initialQuery?: string;
   initialCategoryName?: string;
@@ -44,6 +80,8 @@ type Props = {
 
 const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, initialTab, autoSearchOnMount = true }) => {
   const { user } = useAuth();
+  const { lang } = useLang();
+  const t = SEARCH_I18N[lang];
   const [activeTab, setActiveTab] = useState<'search' | 'upload'>('search');
 
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
@@ -57,6 +95,13 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
   const [categoryId, setCategoryId] = useState<string>('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [matchMode, setMatchMode] = useState<'all' | 'any'>('any');
+  const [phrase, setPhrase] = useState('');
+  const [includeTermsRaw, setIncludeTermsRaw] = useState('');
+  const [excludeTermsRaw, setExcludeTermsRaw] = useState('');
+  const [advancedCategories, setAdvancedCategories] = useState<string[]>([]);
+  const [fieldScope, setFieldScope] = useState<'title' | 'title_summary' | 'all'>('all');
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [results, setResults] = useState<DocumentRecord[]>([]);
@@ -161,7 +206,20 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
     setActiveTab(initialTab);
   }, [initialTab]);
 
-  const canSearch = useMemo(() => Boolean(q.trim() || categoryId || from || to), [q, categoryId, from, to]);
+  const canSearch = useMemo(
+    () =>
+      Boolean(
+        q.trim() ||
+          categoryId ||
+          from ||
+          to ||
+          phrase.trim() ||
+          includeTermsRaw.trim() ||
+          excludeTermsRaw.trim() ||
+          advancedCategories.length,
+      ),
+    [q, categoryId, from, to, phrase, includeTermsRaw, excludeTermsRaw, advancedCategories],
+  );
 
   const runSearch = async (override?: { q?: string; categoryId?: string }) => {
     setSearchLoading(true);
@@ -169,9 +227,23 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
     try {
       const qValue = (override?.q ?? q).trim();
       const categoryValue = override?.categoryId ?? categoryId;
+      const include = includeTermsRaw
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean);
+      const exclude = excludeTermsRaw
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean);
       const payload = await searchDocuments({
         q: qValue || undefined,
         categoryId: categoryValue || undefined,
+        matchMode,
+        phrase: phrase.trim() || undefined,
+        include,
+        exclude,
+        categories: advancedCategories,
+        fieldScope,
         from: from ? new Date(from).toISOString() : undefined,
         to: to ? new Date(to).toISOString() : undefined,
         limit: 50,
@@ -206,6 +278,29 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
     runSearchRef.current({ q: nextQ, categoryId: nextCategoryId });
   }, [autoSearchOnMount, initialQuery, initialCategoryName, initialTab, categories]);
 
+  useEffect(() => {
+    if (activeTab !== 'search') return;
+    if (!canSearch) return;
+    const timer = setTimeout(() => {
+      runSearch();
+    }, 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeTab,
+    canSearch,
+    q,
+    categoryId,
+    from,
+    to,
+    matchMode,
+    phrase,
+    includeTermsRaw,
+    excludeTermsRaw,
+    fieldScope,
+    advancedCategories.join('|'),
+  ]);
+
   const QUICK_CATEGORY_LABELS = useMemo(
     () => (['פסק דין', 'חוות דעת', 'תחשיב נזק', 'סיכומים', 'מאמר', 'ספר'] as const),
     [],
@@ -213,6 +308,38 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
 
   const quickCategoryId = (name: (typeof QUICK_CATEGORY_LABELS)[number]): string | undefined => {
     return categories.find((c) => c.name === name)?.id;
+  };
+
+  const activeFilterChips = useMemo(() => {
+    const chips: string[] = [];
+    if (phrase.trim()) chips.push(`phrase: "${phrase.trim()}"`);
+    includeTermsRaw
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .forEach((x) => chips.push(`+${x}`));
+    excludeTermsRaw
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .forEach((x) => chips.push(`-${x}`));
+    advancedCategories.forEach((c) => chips.push(c));
+    if (fieldScope !== 'all') chips.push(`scope:${fieldScope}`);
+    if (matchMode === 'all') chips.push('ALL');
+    return chips.slice(0, 20);
+  }, [phrase, includeTermsRaw, excludeTermsRaw, advancedCategories, fieldScope, matchMode]);
+
+  const clearAdvancedFilters = (): void => {
+    setMatchMode('any');
+    setPhrase('');
+    setIncludeTermsRaw('');
+    setExcludeTermsRaw('');
+    setAdvancedCategories([]);
+    setFieldScope('all');
+    setCategoryId('');
+    setQ('');
+    setFrom('');
+    setTo('');
   };
 
   const handleDeleteAllDocuments = async () => {
@@ -359,7 +486,7 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
         <div className="card-underline" />
         <div className="card-body space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs font-semibold text-slate-light">פילטר מהיר (4 קטגוריות)</p>
+            <p className="text-xs font-semibold text-slate-light">{t.searchAllDocs}</p>
             <div className="segmented-control">
               <button type="button" data-active={categoryId === ''} onClick={() => setCategoryId('')}>
                 הכל
@@ -381,6 +508,108 @@ const DocumentsLibrary: React.FC<Props> = ({ initialQuery, initialCategoryName, 
               })}
             </div>
           </div>
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              className="btn-outline text-[11px] px-3 py-1.5"
+              onClick={() => setAdvancedOpen((v) => !v)}
+            >
+              {t.advancedSearch}
+            </button>
+            {activeFilterChips.length > 0 && (
+              <button type="button" className="btn-outline text-[11px] px-3 py-1.5" onClick={clearAdvancedFilters}>
+                {t.clearFilters}
+              </button>
+            )}
+          </div>
+          {advancedOpen && (
+            <div className="rounded-card border border-pearl bg-pearl/20 p-3 space-y-3">
+              <div className="flex flex-wrap gap-3 text-xs">
+                <label className="inline-flex items-center gap-1">
+                  <input type="radio" checked={matchMode === 'all'} onChange={() => setMatchMode('all')} />
+                  {t.allWords}
+                </label>
+                <label className="inline-flex items-center gap-1">
+                  <input type="radio" checked={matchMode === 'any'} onChange={() => setMatchMode('any')} />
+                  {t.anyWords}
+                </label>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="text-xs font-semibold text-slate-light">{t.phrase}</label>
+                  <input
+                    className="mt-1 w-full rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                    value={phrase}
+                    onChange={(e) => setPhrase(e.target.value)}
+                    placeholder={lang === 'he' ? 'למשל: כאב וסבל' : 'e.g. pain and suffering'}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-light">{t.fieldScope}</label>
+                  <select
+                    className="mt-1 w-full rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                    value={fieldScope}
+                    onChange={(e) => setFieldScope(e.target.value as 'title' | 'title_summary' | 'all')}
+                  >
+                    <option value="title">{t.scopeTitle}</option>
+                    <option value="title_summary">{t.scopeTitleSummary}</option>
+                    <option value="all">{t.scopeAll}</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="text-xs font-semibold text-slate-light">{t.include}</label>
+                  <input
+                    className="mt-1 w-full rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                    value={includeTermsRaw}
+                    onChange={(e) => setIncludeTermsRaw(e.target.value)}
+                    placeholder={lang === 'he' ? 'מופרד בפסיקים' : 'comma separated'}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-light">{t.exclude}</label>
+                  <input
+                    className="mt-1 w-full rounded-card border border-pearl bg-white p-2 text-sm focus:border-gold"
+                    value={excludeTermsRaw}
+                    onChange={(e) => setExcludeTermsRaw(e.target.value)}
+                    placeholder={lang === 'he' ? 'מופרד בפסיקים' : 'comma separated'}
+                  />
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-slate-light mb-1">{t.categories}</p>
+                <div className="flex flex-wrap gap-3 text-sm">
+                  {['פסיקה', 'ספרים', 'מאמרים'].map((cat) => (
+                    <label key={cat} className="inline-flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={advancedCategories.includes(cat)}
+                        onChange={(e) =>
+                          setAdvancedCategories((prev) =>
+                            e.target.checked ? Array.from(new Set([...prev, cat])) : prev.filter((x) => x !== cat),
+                          )
+                        }
+                      />
+                      {cat}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          {activeFilterChips.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-[11px] text-slate-light font-semibold">{t.activeFilters}</p>
+              <div className="flex flex-wrap gap-1">
+                {activeFilterChips.map((chip) => (
+                  <span key={chip} className="rounded-full bg-pearl px-2 py-0.5 text-[11px] text-slate">
+                    {chip}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="text-xs font-semibold text-slate-light">טקסט חופשי</label>

@@ -74,6 +74,42 @@ const searchSchema = z.object({
   source: z.enum(['email', 'manual']).optional(),
   from: z.string().optional(),
   to: z.string().optional(),
+  matchMode: z.enum(['all', 'any']).optional(),
+  phrase: z
+    .string()
+    .optional()
+    .transform((val) => (val ? sanitizeString(val) : val)),
+  include: z
+    .preprocess(
+      (val) => {
+        if (Array.isArray(val)) return val;
+        if (typeof val === 'string') return val.split(',').map((v) => v.trim()).filter(Boolean);
+        return [];
+      },
+      z.array(z.string()).optional(),
+    )
+    .optional(),
+  exclude: z
+    .preprocess(
+      (val) => {
+        if (Array.isArray(val)) return val;
+        if (typeof val === 'string') return val.split(',').map((v) => v.trim()).filter(Boolean);
+        return [];
+      },
+      z.array(z.string()).optional(),
+    )
+    .optional(),
+  categories: z
+    .preprocess(
+      (val) => {
+        if (Array.isArray(val)) return val;
+        if (typeof val === 'string') return val.split(',').map((v) => v.trim()).filter(Boolean);
+        return [];
+      },
+      z.array(z.string()).optional(),
+    )
+    .optional(),
+  fieldScope: z.enum(['title', 'title_summary', 'all']).optional(),
   limit: z.string().optional(),
   offset: z.string().optional(),
 });
@@ -94,6 +130,26 @@ const unwrapQuotedPhrase = (input: string): string => {
     }
   }
   return s;
+};
+
+const extractFirstQuotedPhrase = (input: string): string => {
+  const s = (input ?? '').trim();
+  if (!s) return '';
+  const patterns = [/"([^"]{2,200})"/, /“([^”]{2,200})”/, /״([^״]{2,200})״/];
+  for (const pattern of patterns) {
+    const match = s.match(pattern);
+    if (match?.[1]) return match[1].trim();
+  }
+  return '';
+};
+
+const removeQuotedPhrases = (input: string): string => {
+  return (input ?? '')
+    .replace(/"[^"]{2,200}"/g, ' ')
+    .replace(/“[^”]{2,200}”/g, ' ')
+    .replace(/״[^״]{2,200}״/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 };
 
 const parseDateOrUndefined = (value?: string): Date | undefined => {
@@ -722,6 +778,18 @@ documentsRouter.get('/search', async (req, res) => {
   }
 
   const q = unwrapQuotedPhrase((parsed.data.q ?? '').trim());
+  const matchMode = parsed.data.matchMode ?? 'any';
+  const fieldScope = parsed.data.fieldScope ?? 'all';
+  const phraseFromQ = extractFirstQuotedPhrase(parsed.data.q ?? '');
+  const phrase = (parsed.data.phrase?.trim() || phraseFromQ || '').slice(0, 200);
+  const includeTerms = (parsed.data.include ?? []).map((x) => sanitizeString(String(x))).filter(Boolean).slice(0, 20);
+  const excludeTerms = (parsed.data.exclude ?? []).map((x) => sanitizeString(String(x))).filter(Boolean).slice(0, 20);
+  const categories = (parsed.data.categories ?? []).map((x) => sanitizeString(String(x))).filter(Boolean).slice(0, 10);
+  const tokenizedQ = removeQuotedPhrases(parsed.data.q ?? '')
+    .split(/\s+/)
+    .map((x) => x.trim())
+    .filter((x) => x.length >= 2)
+    .slice(0, 20);
   const categoryId = typeof parsed.data.categoryId === 'string' ? parsed.data.categoryId : undefined;
   const categoryName = typeof parsed.data.categoryName === 'string' ? parsed.data.categoryName.trim() : undefined;
   const source = parsed.data.source ? mapSource(parsed.data.source) : undefined;
@@ -730,15 +798,65 @@ documentsRouter.get('/search', async (req, res) => {
   const limit = Math.min(Math.max(Number(parsed.data.limit ?? 25) || 25, 1), 50);
   const offset = Math.max(Number(parsed.data.offset ?? 0) || 0, 0);
 
-  // Use Postgres ILIKE across title/summary/content + TEXT[] (topics/keywords) via array_to_string
-  // Only search by text if q is provided and not empty
+  // Backwards-compatible q behavior: if only q exists and no advanced fields, use legacy ILIKE broad search.
+  const hasAdvancedFilters =
+    Boolean(phrase) ||
+    includeTerms.length > 0 ||
+    excludeTerms.length > 0 ||
+    categories.length > 0 ||
+    fieldScope !== 'all' ||
+    matchMode !== 'any';
   const hasTextSearch = q && q.length > 0;
-  const ilike = hasTextSearch ? `%${q}%` : null;
+  const ilike = hasTextSearch && !hasAdvancedFilters ? `%${q}%` : null;
   const categoryIdVal = categoryId ?? null;
   const categoryNameVal = categoryName ? `%${categoryName}%` : null;
+  const categoryNamesVal = categories;
   const sourceVal = source ?? null;
   const fromVal = from ?? null;
   const toVal = to ?? null;
+
+  const scopeExprs: Prisma.Sql[] =
+    fieldScope === 'title'
+      ? [Prisma.sql`"d"."title"`]
+      : fieldScope === 'title_summary'
+        ? [Prisma.sql`"d"."title"`, Prisma.sql`"d"."summary"`]
+        : [
+            Prisma.sql`"d"."title"`,
+            Prisma.sql`"d"."summary"`,
+            Prisma.sql`COALESCE("d"."content", '')`,
+            Prisma.sql`array_to_string("d"."topics", ' ')`,
+            Prisma.sql`array_to_string("d"."keywords", ' ')`,
+          ];
+
+  const makeScopeLike = (term: string): Prisma.Sql => {
+    const p = `%${term}%`;
+    const checks = scopeExprs.map((expr) => Prisma.sql`${expr} ILIKE ${p}`);
+    return checks.length === 1 ? checks[0] : Prisma.sql`(${Prisma.join(checks, ' OR ')})`;
+  };
+
+  const advancedConditions: Prisma.Sql[] = [];
+  if (phrase) {
+    advancedConditions.push(makeScopeLike(phrase));
+  }
+  includeTerms.forEach((term) => {
+    advancedConditions.push(makeScopeLike(term));
+  });
+  excludeTerms.forEach((term) => {
+    advancedConditions.push(Prisma.sql`NOT (${makeScopeLike(term)})`);
+  });
+  if (tokenizedQ.length > 0) {
+    if (matchMode === 'all') {
+      tokenizedQ.forEach((t) => advancedConditions.push(makeScopeLike(t)));
+    } else {
+      const ors = tokenizedQ.map((t) => makeScopeLike(t));
+      advancedConditions.push(ors.length === 1 ? ors[0] : Prisma.sql`(${Prisma.join(ors, ' OR ')})`);
+    }
+  }
+
+  const advancedSql =
+    advancedConditions.length > 0 ? Prisma.sql`AND (${Prisma.join(advancedConditions, ' AND ')})` : Prisma.empty;
+  const categoryNamesSql =
+    categoryNamesVal.length > 0 ? Prisma.sql`AND "c"."name" IN (${Prisma.join(categoryNamesVal)})` : Prisma.empty;
 
   const whereSql = Prisma.sql`
     WHERE
@@ -760,9 +878,11 @@ documentsRouter.get('/search', async (req, res) => {
       ))
       AND (${categoryIdVal}::text IS NULL OR "d"."categoryId" = ${categoryIdVal}::text)
       AND (${categoryNameVal}::text IS NULL OR "c"."name" ILIKE ${categoryNameVal})
+      ${categoryNamesSql}
       AND (${sourceVal}::"DocumentSource" IS NULL OR "d"."source" = ${sourceVal}::"DocumentSource")
       AND (${fromVal}::timestamptz IS NULL OR "d"."createdAt" >= ${fromVal}::timestamptz)
       AND (${toVal}::timestamptz IS NULL OR "d"."createdAt" <= ${toVal}::timestamptz)
+      ${advancedSql}
   `;
 
   const documents = await prisma.$queryRaw<any[]>(
@@ -793,9 +913,21 @@ documentsRouter.get('/search', async (req, res) => {
     documents: documents.map((row) => ({
       ...row,
       category: { id: row.category_id, name: row.category_name },
+      categoryName: row.category_name,
+      snippet: ((row.summary as string) || (row.content as string) || '').slice(0, 280),
       attachmentUrl: row.attachmentUrl ? buildAttachmentDownloadUrl(req, String(row.id)) : null,
     })),
     pagination: { limit, offset, total },
+    normalizedQuery: {
+      q: parsed.data.q ?? '',
+      phrase: phrase || null,
+      include: includeTerms,
+      exclude: excludeTerms,
+      tokens: tokenizedQ,
+      matchMode,
+      fieldScope,
+      categories,
+    },
   });
 });
 
