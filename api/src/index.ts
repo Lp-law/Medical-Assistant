@@ -37,7 +37,28 @@ app.use(
 
 app.use(
   cors({
-    origin: config.corsOrigins,
+    origin: (origin, callback) => {
+      // Allow server-to-server / curl (no Origin header)
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      const configured = new Set(config.corsOrigins);
+      if (configured.has(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      // Render preview domains for this project (frontend/backend)
+      const isRenderProjectOrigin = /^https:\/\/medical-assistant-[a-z0-9-]+\.onrender\.com$/i.test(origin);
+      if (isRenderProjectOrigin) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error('cors_not_allowed'));
+    },
     credentials: true,
   })
 );
