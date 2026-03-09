@@ -24,27 +24,25 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setBookOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-gold hover:bg-gold/10 transition"
+              aria-label="ספר תחשיבי נזק"
+            >
+              <Book className="w-5 h-5" />
+              <span>תחשיבי נזק</span>
+            </button>
             {user && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setBookOpen(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-gold hover:bg-gold/10 transition"
-                  aria-label="ספר תחשיבי נזק"
-                >
-                  <Book className="w-5 h-5" />
-                  <span className="hidden sm:inline">תחשיבי נזק</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={logout}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-gold hover:bg-gold/10 transition"
-                  aria-label="התנתקות"
-                >
-                  <LogOut className="w-4 h-4" />
-                  התנתקות
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={logout}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-gold hover:bg-gold/10 transition"
+                aria-label="התנתקות"
+              >
+                <LogOut className="w-4 h-4" />
+                התנתקות
+              </button>
             )}
           </div>
         </header>
