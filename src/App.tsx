@@ -1,18 +1,43 @@
 import React, { useState } from 'react';
-import { Calculator, LogOut, Book } from 'lucide-react';
+import { Calculator, LogOut, Book, FileText } from 'lucide-react';
 import { LangProvider } from './context/LangContext';
+import { useLang } from './context/LangContext';
 import { useAuth } from './context/AuthContext';
 import DamagesCalculator from './components/DamagesCalculator';
 import BotAssistantWidget from './components/BotAssistantWidget';
 import BookChaptersModal from './components/BookChaptersModal';
+import DocumentsLibrary from './components/DocumentsLibrary';
+
+type MainView = 'calculator' | 'documents';
+
+const APP_I18N = {
+  he: {
+    documents: 'מסמכים',
+    calculator: 'מחשבון נזק',
+  },
+  'en-GB': {
+    documents: 'Documents',
+    calculator: 'Damages Calculator',
+  },
+} as const;
 
 const App: React.FC = () => {
-  const [botOpen, setBotOpen] = useState(false);
-  const [bookOpen, setBookOpen] = useState(false);
-  const { user, logout } = useAuth();
-
   return (
     <LangProvider>
+      <AppShell />
+    </LangProvider>
+  );
+};
+
+const AppShell: React.FC = () => {
+  const [botOpen, setBotOpen] = useState(false);
+  const [bookOpen, setBookOpen] = useState(false);
+  const [mainView, setMainView] = useState<MainView>('calculator');
+  const { user, logout } = useAuth();
+  const { lang } = useLang();
+  const t = APP_I18N[lang];
+
+  return (
     <div className="min-h-screen bg-pearl text-navy" dir="rtl">
       <div className="flex flex-col min-h-screen">
         <header className="h-16 bg-navy text-gold flex items-center justify-between px-6 shadow-lg">
@@ -24,6 +49,17 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMainView('documents')}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition ${
+                mainView === 'documents' ? 'bg-gold/20 text-gold' : 'text-gold hover:bg-gold/10'
+              }`}
+              aria-label={t.documents}
+            >
+              <FileText className="w-5 h-5" />
+              <span>{t.documents}</span>
+            </button>
             <button
               type="button"
               onClick={() => setBookOpen(true)}
@@ -50,14 +86,13 @@ const App: React.FC = () => {
 
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-5xl mx-auto px-4 py-6 md:px-6 md:py-8">
-            <DamagesCalculator />
+            {mainView === 'documents' ? <DocumentsLibrary autoSearchOnMount={false} /> : <DamagesCalculator />}
           </div>
         </main>
       </div>
 
       <BotAssistantWidget mode="documents" open={botOpen} onOpenChange={setBotOpen} />
     </div>
-    </LangProvider>
   );
 };
 
