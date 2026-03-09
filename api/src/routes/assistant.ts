@@ -133,110 +133,120 @@ const searchDocumentsByQuery = async (
 };
 
 router.post('/search', assistantSearchLimiter, async (req, res) => {
-  const parsed = bodySchema.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    res.status(400).json({ error: 'invalid_body', details: parsed.error.errors });
-    return;
-  }
+  try {
+    const parsed = bodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: 'invalid_body', details: parsed.error.errors });
+      return;
+    }
 
-  const limit = parsed.data.limit ?? 10;
-  const question = parsed.data.question.trim();
-  const categoryName = parsed.data.categoryName?.trim() || undefined;
+    const limit = parsed.data.limit ?? 10;
+    const question = parsed.data.question.trim();
+    const categoryName = parsed.data.categoryName?.trim() || undefined;
 
-  const queries = await generateSearchQueries(question);
-  const quotedPhrases = extractQuotedPhrases(question);
-  const effectiveQueries = [
-    ...quotedPhrases,
-    ...(queries.length ? queries : [question]),
-    unwrapQuotedPhrase(question),
-  ]
-    .map((q) => q.trim())
-    .filter(Boolean);
+    const queries = await generateSearchQueries(question);
+    const quotedPhrases = extractQuotedPhrases(question);
+    const effectiveQueries = [
+      ...quotedPhrases,
+      ...(queries.length ? queries : [question]),
+      unwrapQuotedPhrase(question),
+    ]
+      .map((q) => q.trim())
+      .filter(Boolean);
 
-  const hitCounts = new Map<string, { hit: AssistantDocumentHit; score: number }>();
-  for (const q of effectiveQueries.slice(0, 5)) {
-    const hits = await searchDocumentsByQuery(q, limit, categoryName);
-    for (const hit of hits) {
-      const existing = hitCounts.get(hit.id);
-      if (existing) {
-        existing.score += 1;
-      } else {
-        hitCounts.set(hit.id, { hit, score: 1 });
+    const hitCounts = new Map<string, { hit: AssistantDocumentHit; score: number }>();
+    for (const q of effectiveQueries.slice(0, 5)) {
+      const hits = await searchDocumentsByQuery(q, limit, categoryName);
+      for (const hit of hits) {
+        const existing = hitCounts.get(hit.id);
+        if (existing) {
+          existing.score += 1;
+        } else {
+          hitCounts.set(hit.id, { hit, score: 1 });
+        }
       }
     }
+
+    const documents = Array.from(hitCounts.values())
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((x) => ({
+        ...x.hit,
+        attachmentUrl: x.hit.attachmentUrl ? buildAttachmentDownloadUrl(req, x.hit.id) : null,
+      }));
+
+    res.json({
+      queries: effectiveQueries,
+      documents,
+    });
+  } catch (error) {
+    console.error('[assistant/search] failed', error);
+    res.status(500).json({ error: 'assistant_search_failed' });
   }
-
-  const documents = Array.from(hitCounts.values())
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map((x) => ({
-      ...x.hit,
-      attachmentUrl: x.hit.attachmentUrl ? buildAttachmentDownloadUrl(req, x.hit.id) : null,
-    }));
-
-  res.json({
-    queries: effectiveQueries,
-    documents,
-  });
 });
 
 // תשובה מבוססת RAG: חיפוש במאגר + יצירת תשובה מלל חופשי מהספר עם ציטוט פרק
 router.post('/answer', assistantSearchLimiter, async (req, res) => {
-  const parsed = bodySchema.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    res.status(400).json({ error: 'invalid_body', details: parsed.error.errors });
-    return;
-  }
+  try {
+    const parsed = bodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: 'invalid_body', details: parsed.error.errors });
+      return;
+    }
 
-  const limit = Math.min(parsed.data.limit ?? 10, 20);
-  const question = parsed.data.question.trim();
-  const categoryName = parsed.data.categoryName?.trim() || undefined;
+    const limit = Math.min(parsed.data.limit ?? 10, 20);
+    const question = parsed.data.question.trim();
+    const categoryName = parsed.data.categoryName?.trim() || undefined;
 
-  const queries = await generateSearchQueries(question);
-  const quotedPhrases = extractQuotedPhrases(question);
-  const effectiveQueries = [
-    ...quotedPhrases,
-    ...(queries.length ? queries : [question]),
-    unwrapQuotedPhrase(question),
-  ]
-    .map((q) => q.trim())
-    .filter(Boolean);
+    const queries = await generateSearchQueries(question);
+    const quotedPhrases = extractQuotedPhrases(question);
+    const effectiveQueries = [
+      ...quotedPhrases,
+      ...(queries.length ? queries : [question]),
+      unwrapQuotedPhrase(question),
+    ]
+      .map((q) => q.trim())
+      .filter(Boolean);
 
-  const hitCounts = new Map<string, { hit: AssistantDocumentHit; score: number }>();
-  for (const q of effectiveQueries.slice(0, 5)) {
-    const hits = await searchDocumentsByQuery(q, limit, categoryName);
-    for (const hit of hits) {
-      const existing = hitCounts.get(hit.id);
-      if (existing) {
-        existing.score += 1;
-      } else {
-        hitCounts.set(hit.id, { hit, score: 1 });
+    const hitCounts = new Map<string, { hit: AssistantDocumentHit; score: number }>();
+    for (const q of effectiveQueries.slice(0, 5)) {
+      const hits = await searchDocumentsByQuery(q, limit, categoryName);
+      for (const hit of hits) {
+        const existing = hitCounts.get(hit.id);
+        if (existing) {
+          existing.score += 1;
+        } else {
+          hitCounts.set(hit.id, { hit, score: 1 });
+        }
       }
     }
-  }
 
-  const documents = Array.from(hitCounts.values())
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map((x) => ({
-      ...x.hit,
-      attachmentUrl: x.hit.attachmentUrl ? buildAttachmentDownloadUrl(req, x.hit.id) : null,
+    const documents = Array.from(hitCounts.values())
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((x) => ({
+        ...x.hit,
+        attachmentUrl: x.hit.attachmentUrl ? buildAttachmentDownloadUrl(req, x.hit.id) : null,
+      }));
+
+    const contextBlocks = documents.map((d) => ({
+      title: d.title,
+      bookName: d.bookName ?? undefined,
+      bookChapter: d.bookChapter ?? undefined,
+      contentSnippet: d.contentSnippet,
     }));
 
-  const contextBlocks = documents.map((d) => ({
-    title: d.title,
-    bookName: d.bookName ?? undefined,
-    bookChapter: d.bookChapter ?? undefined,
-    contentSnippet: d.contentSnippet,
-  }));
+    const answer = await generateAssistantAnswer(question, contextBlocks);
 
-  const answer = await generateAssistantAnswer(question, contextBlocks);
-
-  res.json({
-    answer,
-    queries: effectiveQueries,
-    documents,
-  });
+    res.json({
+      answer,
+      queries: effectiveQueries,
+      documents,
+    });
+  } catch (error) {
+    console.error('[assistant/answer] failed', error);
+    res.status(500).json({ error: 'assistant_answer_failed' });
+  }
 });
 
 export const assistantRouter = router;

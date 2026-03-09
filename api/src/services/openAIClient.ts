@@ -48,10 +48,16 @@ export const generateChapterMetadata = async (text: string): Promise<ChapterMeta
     text.slice(0, 8000),
   ].join('\n');
 
-  const response = await openAIClient.getChatCompletions(deployment, [
-    { role: 'system', content: 'אתה עוזר משפטי מומחה ברשלנות רפואית.' },
-    { role: 'user', content: prompt },
-  ]);
+  let response;
+  try {
+    response = await openAIClient.getChatCompletions(deployment, [
+      { role: 'system', content: 'אתה עוזר משפטי מומחה ברשלנות רפואית.' },
+      { role: 'user', content: prompt },
+    ]);
+  } catch (error) {
+    console.warn('[openai] chapter metadata request failed, falling back', error);
+    return fallbackMetadata(text);
+  }
 
   const message = response.choices?.[0]?.message?.content ?? '';
   try {
@@ -103,10 +109,16 @@ export const generateSearchQueries = async (question: string): Promise<string[]>
     q.slice(0, 2000),
   ].join('\n');
 
-  const response = await openAIClient.getChatCompletions(deployment, [
-    { role: 'system', content: 'אתה עוזר חיפוש משפטי שממיר שאלות לשאילתות חיפוש למסמכים.' },
-    { role: 'user', content: prompt },
-  ]);
+  let response;
+  try {
+    response = await openAIClient.getChatCompletions(deployment, [
+      { role: 'system', content: 'אתה עוזר חיפוש משפטי שממיר שאלות לשאילתות חיפוש למסמכים.' },
+      { role: 'user', content: prompt },
+    ]);
+  } catch (error) {
+    console.warn('[openai] search queries request failed, falling back', error);
+    return fallbackSearchQueries(q);
+  }
 
   const message = response.choices?.[0]?.message?.content ?? '';
   try {
@@ -162,10 +174,22 @@ export const generateAssistantAnswer = async (
   const userMessage =
     `קטעים רלוונטיים מהספר:\n\n${contextText.slice(0, 28000)}\n\n---\n\nשאלת המשתמש: ${question.trim().slice(0, 2000)}\n\nענה אך ורק על סמך הקטעים למעלה, ציין פרק (ועמוד אם רלוונטי).`.trim();
 
-  const response = await openAIClient.getChatCompletions(deployment, [
-    { role: 'system', content: ASSISTANT_SYSTEM_PROMPT },
-    { role: 'user', content: userMessage },
-  ]);
+  let response;
+  try {
+    response = await openAIClient.getChatCompletions(deployment, [
+      { role: 'system', content: ASSISTANT_SYSTEM_PROMPT },
+      { role: 'user', content: userMessage },
+    ]);
+  } catch (error) {
+    console.warn('[openai] assistant answer request failed, using fallback', error);
+    if (contextBlocks.length === 0) {
+      return 'המידע לא מופיע בקטעים מהספר שסופקו.';
+    }
+    return (
+      contextBlocks[0].contentSnippet.slice(0, 1500) +
+      (contextBlocks[0].bookChapter ? `\n[מקור: ${contextBlocks[0].bookChapter}]` : '')
+    );
+  }
 
   const answer = response.choices?.[0]?.message?.content?.trim() ?? '';
   return answer || 'לא התקבלה תשובה מהמערכת.';
