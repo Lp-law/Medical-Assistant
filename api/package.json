@@ -8,7 +8,8 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "ingest-book": "ts-node scripts/ingestBookFromFolder.ts",
-    "ingest-folder": "ts-node scripts/ingestDocsFromFolder.ts"
+    "ingest-folder": "node -r dotenv/config -r ts-node/register scripts/ingestDocsFromFolder.ts dotenv_config_path=.env",
+    "check-psika": "node -r dotenv/config -r ts-node/register scripts/checkCaseLawIngest.ts dotenv_config_path=.env"
   },
   "dependencies": {
     "@azure/ai-form-recognizer": "^5.0.0",

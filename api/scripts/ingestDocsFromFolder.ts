@@ -64,12 +64,31 @@ function getRequiredEnv(name: string): string {
   return value;
 }
 
+function ensureDatabaseUrl(): void {
+  const raw = process.env.DATABASE_URL?.trim();
+  if (!raw) {
+    console.error('שגיאה: DATABASE_URL חסר. נא להגדיר אותו בקובץ api/.env או ב-ENV של המערכת.');
+    console.error('Error: DATABASE_URL is missing. Set it in api/.env or process environment.');
+    process.exit(1);
+  }
+  try {
+    const parsed = new URL(raw);
+    const dbName = parsed.pathname.replace(/^\//, '') || 'unknown_db';
+    const host = parsed.hostname || 'unknown_host';
+    console.log(`DB target loaded: ${host}/${dbName}`);
+  } catch {
+    // Keep going; Prisma will validate exact DSN format.
+    console.log('DB target loaded.');
+  }
+}
+
 async function main(): Promise<void> {
   try {
     require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
   } catch {
     // optional
   }
+  ensureDatabaseUrl();
 
   const folderPath = getRequiredEnv('INGEST_FOLDER');
   const ingestCategoryRaw = getRequiredEnv('INGEST_CATEGORY');
