@@ -133,15 +133,38 @@ export const generateSearchQueries = async (question: string): Promise<string[]>
 
 // --- עוזר ספר "תחשיבי נזק": תשובות רק מתוך הספר + ציטוט פרק ---
 
-export const ASSISTANT_SYSTEM_PROMPT = `אתה עוזר מומחה לספר "תחשיבי נזק". תפקידך היחיד: לענות על שאלות המשתמש בהתבסס אך ורק על הקטעים מהספר שסופקו לך.
+const detectLanguage = (text: string): 'he' | 'en-GB' => {
+  const hasHebrew = /[\u0590-\u05FF]/.test(text);
+  const hasLatin = /[A-Za-z]/.test(text);
+  if (hasLatin && !hasHebrew) return 'en-GB';
+  return 'he';
+};
 
-הנחיות מחייבות:
-1. ענה רק על סמך המידע שמופיע בקטעים מהספר. אל תמציא מידע ואל תסתמך על ידע חיצוני.
-2. העדף מלל חופשי מתוך הספר – צטט או נסח מחדש בסגנון הספר ככל האפשר.
-3. בכל תשובה שתכתוב, ציין במפורש את מקור המידע: שם הפרק (למשל: "פרק 3 - היוון", "פרק 1 - מהו תחשיב נזק"). אם בקטע מופיע מספר עמוד – ציין גם אותו.
-4. אם התשובה לשאלה לא נמצאת בקטעים שסופקו, ענה בקצרה: "המידע לא מופיע בקטעים מהספר שסופקו." אל תנסה לנחש או להשלים.
-5. ענה תמיד בעברית, בבהירות ובקצרה אך במלאות ככל שנדרש.
-6. אל תוסיף דעות אישיות, המלצות משפטיות או ייעוץ – רק סיכום/ציטוט מהספר.`;
+const buildAssistantSystemPrompt = (lang: 'he' | 'en-GB'): string => {
+  if (lang === 'en-GB') {
+    return `You are a legal assistant specialised in the book "Damages Calculations". Answer ONLY from the provided context blocks.
+
+Mandatory output format:
+1) "Answer:" with 1–4 sentences.
+2) "Sources:" with 1–5 bullet points.
+
+Rules:
+- Cite ONLY sources provided in the context blocks; do NOT invent sources.
+- If there is not enough evidence in context, state that briefly in Answer and still include Sources from available context.
+- Keep it concise and factual.`;
+  }
+
+  return `אתה עוזר מומחה לספר "תחשיבי נזק". תפקידך היחיד: לענות על שאלות המשתמש על בסיס הקטעים שסופקו.
+
+פורמט פלט מחייב:
+1) "תשובה:" עם 1–4 משפטים.
+2) "מקורות:" עם 1–5 נקודות bullet.
+
+כללים:
+- צטט אך ורק מקורות שמופיעים ב-context blocks; אל תמציא מקורות.
+- אם אין מספיק מידע, כתוב זאת בקצרה תחת "תשובה:" ועדיין הוסף "מקורות:" מתוך ההקשר הקיים.
+- כתוב בקצרה, בצורה ברורה ועובדתית.`;
+};
 
 export interface AssistantContextBlock {
   title: string;
@@ -154,14 +177,22 @@ export const generateAssistantAnswer = async (
   question: string,
   contextBlocks: AssistantContextBlock[],
 ): Promise<string> => {
+  const language = detectLanguage(question);
+  const headingAnswer = language === 'en-GB' ? 'Answer:' : 'תשובה:';
+  const headingSources = language === 'en-GB' ? 'Sources:' : 'מקורות:';
+
   if (!openAIClient || !deployment) {
     if (contextBlocks.length === 0) {
-      return 'המידע לא מופיע בקטעים מהספר שסופקו.';
+      return language === 'en-GB'
+        ? 'Answer: The requested information does not appear in the provided book excerpts.\n\nSources:\n- No matching source was found.'
+        : 'תשובה: המידע המבוקש לא מופיע בקטעים מהספר שסופקו.\n\nמקורות:\n- לא נמצא מקור תואם.';
     }
-    return (
-      contextBlocks[0].contentSnippet.slice(0, 1500) +
-      (contextBlocks[0].bookChapter ? `\n[מקור: ${contextBlocks[0].bookChapter}]` : '')
-    );
+    const fallbackSource = [contextBlocks[0].bookName, contextBlocks[0].bookChapter, contextBlocks[0].title]
+      .filter(Boolean)
+      .join(' — ');
+    return `${headingAnswer} ${contextBlocks[0].contentSnippet.slice(0, 600)}\n\n${headingSources}\n- ${
+      fallbackSource || contextBlocks[0].title
+    }`;
   }
 
   const contextText = contextBlocks
@@ -177,21 +208,41 @@ export const generateAssistantAnswer = async (
   let response;
   try {
     response = await openAIClient.getChatCompletions(deployment, [
-      { role: 'system', content: ASSISTANT_SYSTEM_PROMPT },
+      { role: 'system', content: buildAssistantSystemPrompt(language) },
       { role: 'user', content: userMessage },
     ]);
   } catch (error) {
     console.warn('[openai] assistant answer request failed, using fallback', error);
     if (contextBlocks.length === 0) {
-      return 'המידע לא מופיע בקטעים מהספר שסופקו.';
+      return language === 'en-GB'
+        ? 'Answer: Not enough information was found in the provided excerpts.\n\nSources:\n- No matching source was found.'
+        : 'תשובה: לא נמצא מספיק מידע בקטעים שסופקו.\n\nמקורות:\n- לא נמצא מקור תואם.';
     }
-    return (
-      contextBlocks[0].contentSnippet.slice(0, 1500) +
-      (contextBlocks[0].bookChapter ? `\n[מקור: ${contextBlocks[0].bookChapter}]` : '')
-    );
+    const fallbackSources = contextBlocks.slice(0, 5).map((b) => [b.bookName, b.bookChapter, b.title].filter(Boolean).join(' — '));
+    return `${headingAnswer} ${contextBlocks[0].contentSnippet.slice(0, 600)}\n\n${headingSources}\n${fallbackSources
+      .map((s) => `- ${s}`)
+      .join('\n')}`;
   }
 
   const answer = response.choices?.[0]?.message?.content?.trim() ?? '';
-  return answer || 'לא התקבלה תשובה מהמערכת.';
+  const hasSourcesHeading = language === 'en-GB' ? /(?:^|\n)Sources:/i.test(answer) : /(?:^|\n)מקורות:/.test(answer);
+  if (!answer) {
+    return language === 'en-GB'
+      ? 'Answer: No answer was generated.\n\nSources:\n- No matching source was found.'
+      : 'תשובה: לא התקבלה תשובה מהמערכת.\n\nמקורות:\n- לא נמצא מקור תואם.';
+  }
+  if (hasSourcesHeading) {
+    return answer;
+  }
+  const fallbackSources = contextBlocks
+    .slice(0, 5)
+    .map((b) => [b.bookName, b.bookChapter, b.title].filter(Boolean).join(' — '))
+    .filter(Boolean);
+  const sourcesBlock = fallbackSources.length
+    ? fallbackSources.map((s) => `- ${s}`).join('\n')
+    : language === 'en-GB'
+      ? '- No matching source was found.'
+      : '- לא נמצא מקור תואם.';
+  return `${answer}\n\n${headingSources}\n${sourcesBlock}`;
 };
 

@@ -94,6 +94,13 @@ const expandQueriesWithSynonyms = (question: string, baseQueries: string[]): str
   return Array.from(new Set(expanded.map((q) => q.trim()).filter(Boolean))).slice(0, 12);
 };
 
+const detectLanguage = (text: string): 'he' | 'en-GB' => {
+  const hasHebrew = /[\u0590-\u05FF]/.test(text);
+  const hasLatin = /[A-Za-z]/.test(text);
+  if (hasLatin && !hasHebrew) return 'en-GB';
+  return 'he';
+};
+
 type AssistantDocumentHit = {
   id: string;
   title: string;
@@ -256,12 +263,27 @@ router.post('/answer', assistantSearchLimiter, async (req, res) => {
         attachmentUrl: x.hit.attachmentUrl ? buildAttachmentDownloadUrl(req, x.hit.id) : null,
       }));
 
-    const contextBlocks = documents.map((d) => ({
+    const contextBlocks = documents
+      .filter((d) => (d.contentSnippet ?? '').trim().length >= 200)
+      .map((d) => ({
       title: d.title,
       bookName: d.bookName ?? undefined,
       bookChapter: d.bookChapter ?? undefined,
       contentSnippet: d.contentSnippet,
-    }));
+      }));
+
+    if (contextBlocks.length === 0) {
+      const language = detectLanguage(question);
+      res.json({
+        answer:
+          language === 'en-GB'
+            ? 'Not enough content was found in the knowledge base. Please narrow or rephrase your question.'
+            : 'לא נמצא תוכן מספיק במאגר. אנא נסה לצמצם או לנסח מחדש את השאלה.',
+        queries: effectiveQueries,
+        documents,
+      });
+      return;
+    }
 
     const answer = await generateAssistantAnswer(question, contextBlocks);
 
