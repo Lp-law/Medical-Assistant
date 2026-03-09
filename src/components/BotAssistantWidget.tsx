@@ -120,7 +120,7 @@ const BotAssistantWidget: React.FC<Props> = ({ mode = 'documents', onOpenDocumen
     setError(null);
     try {
       const limit = override?.limit ?? 10;
-      const categoryName = 'תחשיבי נזק'; // תשובות רק מהספר
+      const categoryName = undefined; // ברירת מחדל: חיפוש גלובלי בכל המסמכים
 
       const now = new Date().toISOString();
       setHistory((prev) => [
@@ -128,7 +128,7 @@ const BotAssistantWidget: React.FC<Props> = ({ mode = 'documents', onOpenDocumen
         { id: `${Date.now()}-u`, role: 'user', text: q, createdAt: now },
       ]);
 
-      const res = await assistantAnswer(q, { limit, categoryName });
+      const res = await assistantAnswer(q, { limit });
       const assistantTurn: ChatTurn = {
         id: `${Date.now()}-a`,
         role: 'assistant',
@@ -244,6 +244,7 @@ const BotAssistantWidget: React.FC<Props> = ({ mode = 'documents', onOpenDocumen
                   loading={loading}
                   label={loading ? 'מייצר תשובה מהספר…' : 'שאל שאלה על תחשיבי נזק ואתן תשובה מהספר עם הפניה לפרק'}
                 />
+                <p className="text-xs text-slate">חיפוש בכל המסמכים</p>
               </div>
               <button
                 type="button"

@@ -42,7 +42,7 @@ export const assistantSearch = async (
       body: JSON.stringify({
         question,
         limit: input?.limit ?? 10,
-        categoryName: input?.categoryName,
+        ...(input?.categoryName ? { categoryName: input.categoryName } : {}),
       }),
       signal: controller.signal,
     });
@@ -73,7 +73,7 @@ export const assistantAnswer = async (
       body: JSON.stringify({
         question,
         limit: input?.limit ?? 10,
-        categoryName: input?.categoryName,
+        ...(input?.categoryName ? { categoryName: input.categoryName } : {}),
       }),
       signal: controller.signal,
     });
