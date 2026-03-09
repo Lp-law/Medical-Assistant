@@ -2,8 +2,40 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth';
 import { config } from '../services/env';
 import { prisma } from '../services/prisma';
+import { uploadTextHealthcheck } from '../services/blobStorage';
 
 export const adminRouter = Router();
+
+const requireAdminTestToken = (req: any, res: any, next: any): void => {
+  const configured = process.env.ADMIN_TEST_TOKEN?.trim();
+  if (!configured) {
+    // Keep endpoint unavailable unless explicitly enabled.
+    res.status(503).json({ error: 'blob_healthcheck_disabled' });
+    return;
+  }
+  const provided = String(req.header('x-admin-token') ?? '').trim();
+  if (!provided || provided !== configured) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+  next();
+};
+
+// Temporary endpoint for Azure Blob connectivity validation (remove after verification).
+adminRouter.get('/blob-healthcheck', requireAdminTestToken, async (_req, res) => {
+  try {
+    const uploaded = await uploadTextHealthcheck();
+    res.json({
+      ok: true,
+      container: uploaded.container,
+      blobName: uploaded.blobName,
+      etag: uploaded.etag,
+    });
+  } catch (error: any) {
+    const message = typeof error?.message === 'string' ? error.message : 'blob_healthcheck_failed';
+    res.status(500).json({ ok: false, error: message });
+  }
+});
 
 adminRouter.use(requireAuth);
 
