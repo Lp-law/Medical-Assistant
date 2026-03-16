@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Shield, Lock, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
+const DASHBOARD_URL = 'https://ringforge.onrender.com/dashboard';
+
 const LoginScreen: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -27,6 +29,10 @@ const LoginScreen: React.FC = () => {
       console.error(err);
       setError(loginErrorMessage(err));
     }
+  };
+
+  const openDashboard = (): void => {
+    window.location.assign(DASHBOARD_URL);
   };
 
   return (
@@ -66,6 +72,14 @@ const LoginScreen: React.FC = () => {
             aria-describedby={error ? 'login-error' : undefined}
           >
             {loading ? 'מתחבר...' : 'כניסה למערכת'}
+          </button>
+          <button
+            type="button"
+            onClick={openDashboard}
+            className="btn-outline w-full justify-center py-3 font-bold"
+            aria-label="דשבורד"
+          >
+            דשבורד
           </button>
         </form>
       </div>
